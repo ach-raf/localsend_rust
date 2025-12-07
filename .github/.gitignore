@@ -1,0 +1,6 @@
+# Don't commit base64 encoded keystores
+*.b64
+
+# Don't commit temporary keystore files
+*.jks.tmp
+*.keystore.tmp
