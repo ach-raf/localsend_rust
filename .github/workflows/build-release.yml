@@ -113,30 +113,35 @@ jobs:
       - name: Build Frontend
         run: npm run build
 
-      - name: Create Keystore from Secrets (if available)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > src-tauri/gen/android/app/upload-keystore.jks
-          echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" > src-tauri/gen/android/key.properties
-          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> src-tauri/gen/android/key.properties
-          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> src-tauri/gen/android/key.properties
-          echo "storeFile=upload-keystore.jks" >> src-tauri/gen/android/key.properties
-
-      - name: Create Debug Keystore (fallback)
-        if: ${{ !secrets.ANDROID_KEYSTORE_BASE64 }}
+      - name: Setup Android Keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           mkdir -p src-tauri/gen/android/app
-          keytool -genkey -v \
-            -keystore src-tauri/gen/android/app/upload-keystore.jks \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -alias upload \
-            -storepass android \
-            -keypass android \
-            -dname "CN=Tauri App, OU=Development, O=MyCompany, L=City, S=State, C=US"
-          echo "storePassword=android" > src-tauri/gen/android/key.properties
-          echo "keyPassword=android" >> src-tauri/gen/android/key.properties
-          echo "keyAlias=upload" >> src-tauri/gen/android/key.properties
-          echo "storeFile=upload-keystore.jks" >> src-tauri/gen/android/key.properties
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "Using production keystore from secrets"
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/app/upload-keystore.jks
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD" > src-tauri/gen/android/key.properties
+            echo "keyPassword=$ANDROID_KEY_PASSWORD" >> src-tauri/gen/android/key.properties
+            echo "keyAlias=$ANDROID_KEY_ALIAS" >> src-tauri/gen/android/key.properties
+            echo "storeFile=upload-keystore.jks" >> src-tauri/gen/android/key.properties
+          else
+            echo "Creating debug keystore (secrets not found)"
+            keytool -genkey -v \
+              -keystore src-tauri/gen/android/app/upload-keystore.jks \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -alias upload \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Tauri App, OU=Development, O=MyCompany, L=City, S=State, C=US"
+            echo "storePassword=android" > src-tauri/gen/android/key.properties
+            echo "keyPassword=android" >> src-tauri/gen/android/key.properties
+            echo "keyAlias=upload" >> src-tauri/gen/android/key.properties
+            echo "storeFile=upload-keystore.jks" >> src-tauri/gen/android/key.properties
+          fi
 
       - name: Build Android APK
         run: npm run tauri android build -- --apk
