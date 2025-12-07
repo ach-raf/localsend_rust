@@ -8,6 +8,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -144,7 +147,7 @@ jobs:
           fi
 
       - name: Build Android APK
-        run: npm run tauri android build -- --apk
+        run: npm run tauri android build -- --apk --target aarch64
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
