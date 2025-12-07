@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - release
+      - master
     tags:
       - "v*"
   workflow_dispatch:
@@ -50,11 +51,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "LocalSend Rust ${{ github.ref_name }}"
-          releaseBody: "See the assets to download this version and install."
-          releaseDraft: true
-          prerelease: false
           args: --target x86_64-pc-windows-msvc
 
       - name: Upload Windows Artifacts
@@ -166,24 +162,17 @@ jobs:
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           retention-days: 30
 
-      - name: Upload to Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
-          draft: true
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   create-release:
     name: Create Combined Release
     needs: [build-windows, build-android]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/release' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
 
     steps:
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
       - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -199,13 +188,17 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}-{1}', steps.date.outputs.date, github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('LocalSend Rust {0}', github.ref_name) || format('Build {0} (Run {1})', steps.date.outputs.date, github.run_number) }}
           files: |
             ./artifacts/windows/**/*
             ./artifacts/android/**/*.apk
-          draft: true
-          prerelease: false
+          draft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
           body: |
-            # LocalSend Rust ${{ github.ref_name }}
+            # LocalSend Rust ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('{0} Run {1}', steps.date.outputs.date, github.run_number) }}
+
+            Build triggered by ${{ github.event_name }} on ${{ github.ref }}.
 
             ## Downloads
 
@@ -214,7 +207,6 @@ jobs:
 
             ### Android
             - Download the `.apk` file and install on your Android device
-            - You may need to enable "Install from Unknown Sources" in your device settings
 
             ## Changes
             See the commit history for detailed changes.
