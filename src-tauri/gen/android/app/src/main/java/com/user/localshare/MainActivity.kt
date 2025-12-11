@@ -1,4 +1,4 @@
-package com.user.tauri_app
+package com.user.localshare
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge

@@ -22,10 +22,10 @@ if (keyPropertiesFile.exists()) {
 
 android {
     compileSdk = 36
-    namespace = "com.user.tauri_app"
+    namespace = "com.user.localshare"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "com.user.tauri_app"
+        applicationId = "com.user.localshare"
         minSdk = 24
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()

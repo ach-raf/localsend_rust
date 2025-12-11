@@ -12,10 +12,8 @@ build
 /captures
 .externalNativeBuild
 .cxx
-local.properties
-key.properties
-*.jks
-*.keystore
+#local.properties # we are just using some half assed keystore for now
+#key.properties # we are just using some half assed keystore for now
 
 /.tauri
 /tauri.settings.gradle

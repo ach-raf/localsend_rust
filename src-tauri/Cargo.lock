@@ -2219,6 +2219,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "local-share"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "flume",
+ "hostname",
+ "infer 0.15.0",
+ "local-ip-address",
+ "mdns-sd",
+ "names",
+ "once_cell",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-opener",
+ "tokio",
+ "tower-http",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4290,32 +4316,6 @@ dependencies = [
  "webview2-com",
  "window-vibrancy",
  "windows",
-]
-
-[[package]]
-name = "tauri-app"
-version = "0.1.0"
-dependencies = [
- "axum",
- "flume",
- "hostname",
- "infer 0.15.0",
- "local-ip-address",
- "mdns-sd",
- "names",
- "once_cell",
- "reqwest",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-opener",
- "tokio",
- "tower-http",
- "urlencoding",
- "uuid",
 ]
 
 [[package]]
