@@ -3,18 +3,26 @@ mod discovery;
 mod server;
 mod transfer;
 
-use crate::config::{load_config, save_config, AppConfig};
+use crate::config::{generate_anime_name, load_config, save_config, AppConfig};
 use crate::discovery::{refresh_discovery, register_service, start_discovery};
 use crate::server::start_server;
 use crate::transfer::{send_file, send_file_bytes, send_text};
 use mdns_sd::ServiceDaemon;
-use std::sync::Mutex;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, State};
+use tokio::sync::oneshot;
+
+#[derive(Clone)]
+pub struct PendingTransfers {
+    pub transfers: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>,
+}
 
 struct AppState {
     config: Mutex<AppConfig>,
     #[allow(dead_code)] // Kept alive to maintain mDNS registration
     service_daemon: Mutex<Option<ServiceDaemon>>,
+    pending_transfers: PendingTransfers,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -78,6 +86,11 @@ fn refresh_peers() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn generate_random_name() -> String {
+    generate_anime_name()
+}
+
+#[tauri::command]
 fn scan_media_file(app: AppHandle, path: String) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
@@ -96,6 +109,28 @@ fn scan_media_file(app: AppHandle, path: String) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[tauri::command]
+fn respond_to_file_transfer(
+    state: State<'_, AppState>,
+    transfer_id: String,
+    accepted: bool,
+) -> Result<(), String> {
+    let mut transfers = state
+        .pending_transfers
+        .transfers
+        .lock()
+        .map_err(|e| format!("Failed to lock transfers: {}", e))?;
+
+    if let Some(sender) = transfers.remove(&transfer_id) {
+        sender
+            .send(accepted)
+            .map_err(|_| "Failed to send response".to_string())?;
+        Ok(())
+    } else {
+        Err(format!("Transfer {} not found", transfer_id))
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -124,9 +159,14 @@ pub fn run() {
                 }
             };
 
+            let pending_transfers = PendingTransfers {
+                transfers: Arc::new(Mutex::new(HashMap::new())),
+            };
+
             app.manage(AppState {
                 config: Mutex::new(config),
                 service_daemon: Mutex::new(daemon),
+                pending_transfers: pending_transfers.clone(),
             });
 
             // Start Discovery
@@ -137,7 +177,7 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 eprintln!("Starting HTTP server...");
-                start_server(handle, port).await;
+                start_server(handle, port, pending_transfers).await;
             });
 
             Ok(())
@@ -150,7 +190,9 @@ pub fn run() {
             send_file_bytes_to_peer,
             send_text_to_peer,
             refresh_peers,
-            scan_media_file
+            scan_media_file,
+            generate_random_name,
+            respond_to_file_transfer
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

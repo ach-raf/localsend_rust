@@ -1,3 +1,4 @@
+use crate::PendingTransfers;
 use axum::{
     extract::{DefaultBodyLimit, Multipart, State},
     routing::{get, post},
@@ -10,12 +11,21 @@ use tauri::Emitter;
 use tauri::{AppHandle, Manager}; // Import Manager for path()
 use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
+use tokio::sync::oneshot;
 use urlencoding::decode;
 
 #[derive(Clone)]
 struct ServerState {
     app_handle: AppHandle,
     download_dir: PathBuf,
+    pending_transfers: PendingTransfers,
+}
+
+#[derive(Serialize, Clone)]
+struct FileTransferRequest {
+    transfer_id: String,
+    file_name: String,
+    file_size: Option<u64>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -24,7 +34,7 @@ struct MessagePayload {
     content: String,
 }
 
-pub async fn start_server(app: AppHandle, port: u16) {
+pub async fn start_server(app: AppHandle, port: u16, pending_transfers: PendingTransfers) {
     // Get the proper Downloads directory for the platform
     let download_dir = if cfg!(target_os = "android") {
         // On Android, use the public Downloads directory
@@ -59,6 +69,7 @@ pub async fn start_server(app: AppHandle, port: u16) {
     let state = ServerState {
         app_handle: app.clone(),
         download_dir,
+        pending_transfers,
     };
 
     let app_router = Router::new()
@@ -100,117 +111,151 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
             sanitized_name, raw_file_name
         );
 
-        // Notify frontend about incoming file immediately (using sanitized name so far)
-        let _ = state.app_handle.emit("file-receive-start", &sanitized_name);
-
-        // Read the first chunk to determine type (and avoid reading whole file to memory)
-        let mut first_chunk = None;
-        match field.chunk().await {
-            Ok(Some(chunk)) => {
-                eprintln!("First chunk size: {} bytes", chunk.len());
-                first_chunk = Some(chunk);
-            }
-            Ok(None) => {
-                eprintln!("Empty file received: {}", sanitized_name);
-            }
-            Err(e) => {
-                eprintln!("Failed to read first chunk: {}", e);
-                continue;
-            }
-        }
-
-        // If we have data, try to infer extension if missing
-        if let Some(ref bytes) = first_chunk {
-            if std::path::Path::new(&sanitized_name).extension().is_none() {
-                if let Some(kind) = infer::get(bytes) {
-                    let ext = kind.extension();
-                    eprintln!("Inferred extension for {}: .{}", sanitized_name, ext);
-                    sanitized_name = format!("{}.{}", sanitized_name, ext);
+        // Read all chunks into memory first (we need to wait for user confirmation)
+        let mut file_data = Vec::new();
+        loop {
+            match field.chunk().await {
+                Ok(Some(chunk)) => {
+                    file_data.extend_from_slice(&chunk);
+                }
+                Ok(None) => {
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("Error reading chunk: {}", e);
+                    continue;
                 }
             }
         }
+
+        eprintln!("Read {} bytes from multipart", file_data.len());
+
+        if file_data.is_empty() {
+            eprintln!("Empty file received: {}", sanitized_name);
+            continue;
+        }
+
+        // Try to infer extension if missing
+        if std::path::Path::new(&sanitized_name).extension().is_none() {
+            if let Some(kind) = infer::get(&file_data) {
+                let ext = kind.extension();
+                eprintln!("Inferred extension for {}: .{}", sanitized_name, ext);
+                sanitized_name = format!("{}.{}", sanitized_name, ext);
+            }
+        }
+
+        // Generate a unique transfer ID
+        let transfer_id = format!(
+            "{}_{}",
+            sanitized_name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        // Create a oneshot channel for the response
+        let (tx, rx) = oneshot::channel();
+
+        // Store the sender in pending_transfers
+        {
+            let mut transfers = state.pending_transfers.transfers.lock().unwrap();
+            transfers.insert(transfer_id.clone(), tx);
+        }
+
+        // Emit event to frontend requesting confirmation
+        let request = FileTransferRequest {
+            transfer_id: transfer_id.clone(),
+            file_name: sanitized_name.clone(),
+            file_size: Some(file_data.len() as u64),
+        };
+
+        if let Err(e) = state.app_handle.emit("file-transfer-request", &request) {
+            eprintln!("Failed to emit file-transfer-request: {}", e);
+            // Clean up
+            let mut transfers = state.pending_transfers.transfers.lock().unwrap();
+            transfers.remove(&transfer_id);
+            continue;
+        }
+
+        eprintln!(
+            "Waiting for user confirmation for transfer: {}",
+            transfer_id
+        );
+
+        // Wait for user response (with timeout)
+        let accepted = match tokio::time::timeout(
+            std::time::Duration::from_secs(60), // 60 second timeout
+            rx,
+        )
+        .await
+        {
+            Ok(Ok(response)) => {
+                eprintln!("User response for {}: {}", transfer_id, response);
+                response
+            }
+            Ok(Err(_)) => {
+                eprintln!("Channel closed for transfer: {}", transfer_id);
+                false
+            }
+            Err(_) => {
+                eprintln!("Timeout waiting for confirmation: {}", transfer_id);
+                let _ = state.app_handle.emit("file-transfer-timeout", &transfer_id);
+                false
+            }
+        };
+
+        if !accepted {
+            eprintln!("Transfer rejected or timed out: {}", transfer_id);
+            let _ = state
+                .app_handle
+                .emit("file-transfer-rejected", &sanitized_name);
+            continue;
+        }
+
+        // User accepted, save the file
+        eprintln!("Transfer accepted, saving file: {}", sanitized_name);
+        let _ = state.app_handle.emit("file-receive-start", &sanitized_name);
 
         let file_path = state.download_dir.join(&sanitized_name);
 
-        if let Ok(mut file) = File::create(&file_path).await {
-            let mut success = true;
-            let mut total_bytes_written = 0usize;
-
-            // Write first chunk
-            if let Some(bytes) = first_chunk {
-                total_bytes_written += bytes.len();
-                if let Err(e) = file.write_all(&bytes).await {
-                    eprintln!("Failed to write first chunk: {}", e);
-                    success = false;
-                }
-            }
-
-            // Stream the rest of the file
-            if success {
-                let mut chunk_count = 1;
-                loop {
-                    match field.chunk().await {
-                        Ok(Some(chunk)) => {
-                            chunk_count += 1;
-                            let chunk_size = chunk.len();
-                            total_bytes_written += chunk_size;
+        match File::create(&file_path).await {
+            Ok(mut file) => {
+                match file.write_all(&file_data).await {
+                    Ok(_) => {
+                        if let Err(e) = file.flush().await {
+                            eprintln!("Failed to flush file: {}", e);
+                        } else {
                             eprintln!(
-                                "Chunk {}: {} bytes (total: {} bytes)",
-                                chunk_count, chunk_size, total_bytes_written
+                                "File saved successfully: {:?} ({} bytes)",
+                                file_path,
+                                file_data.len()
                             );
 
-                            if let Err(e) = file.write_all(&chunk).await {
-                                eprintln!("Failed to write chunk {}: {}", chunk_count, e);
-                                success = false;
-                                break;
+                            // On Android, trigger media scan to make file visible
+                            #[cfg(target_os = "android")]
+                            {
+                                if let Some(path_str) = file_path.to_str() {
+                                    let _ = state.app_handle.emit("trigger-media-scan", path_str);
+                                }
                             }
+
+                            let _ = state
+                                .app_handle
+                                .emit("file-receive-complete", &sanitized_name);
                         }
-                        Ok(None) => {
-                            eprintln!("Reached end of file stream");
-                            break;
-                        }
-                        Err(e) => {
-                            eprintln!("Error reading chunk {}: {}", chunk_count, e);
-                            success = false;
-                            break;
-                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to write file: {}", e);
+                        let _ = state.app_handle.emit("file-receive-error", &sanitized_name);
                     }
                 }
             }
-
-            // Ensure all data is written to disk
-            if let Err(e) = file.flush().await {
-                eprintln!("Failed to flush file: {}", e);
-                success = false;
+            Err(e) => {
+                eprintln!("Failed to create file: {:?}", e);
+                let _ = state.app_handle.emit("file-receive-error", &sanitized_name);
             }
-
-            if success {
-                eprintln!(
-                    "File saved successfully: {:?} ({} bytes total)",
-                    file_path, total_bytes_written
-                );
-
-                // On Android, trigger media scan to make file visible
-                #[cfg(target_os = "android")]
-                {
-                    if let Some(path_str) = file_path.to_str() {
-                        let _ = state.app_handle.emit("trigger-media-scan", path_str);
-                    }
-                }
-            } else {
-                eprintln!(
-                    "File transfer failed after writing {} bytes",
-                    total_bytes_written
-                );
-            }
-        } else {
-            eprintln!("Failed to create file: {:?}", file_path);
         }
-
-        // Notify frontend about completion (using final sanitized name)
-        let _ = state
-            .app_handle
-            .emit("file-receive-complete", &sanitized_name);
     }
 }
 
