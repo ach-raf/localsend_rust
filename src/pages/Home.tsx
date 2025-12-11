@@ -28,6 +28,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import TextMessageModal from "../components/TextMessageModal";
+import FileTransferConfirmModal from "../components/FileTransferConfirmModal";
 
 interface Peer {
   ip: string;
@@ -41,6 +42,12 @@ interface ReceivedMessage {
   content: string;
 }
 
+interface FileTransferRequest {
+  transfer_id: string;
+  file_name: string;
+  file_size?: number;
+}
+
 export default function Home() {
   const [peers, setPeers] = useState<Peer[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
@@ -50,6 +57,9 @@ export default function Home() {
   const [receivedMessage, setReceivedMessage] =
     useState<ReceivedMessage | null>(null);
   const [messageModalOpened, setMessageModalOpened] = useState(false);
+  const [fileTransferRequest, setFileTransferRequest] =
+    useState<FileTransferRequest | null>(null);
+  const [transferModalOpened, setTransferModalOpened] = useState(false);
 
   // Use ref to access current selectedPeer in event handlers without re-subscribing
   const selectedPeerRef = useRef<Peer | null>(null);
@@ -92,6 +102,55 @@ export default function Home() {
         content: event.payload.content,
       });
       setMessageModalOpened(true);
+    });
+
+    // Listen for file transfer requests
+    const unlistenFileTransferRequest = listen<FileTransferRequest>(
+      "file-transfer-request",
+      (event) => {
+        console.log("File transfer request:", event.payload);
+        setFileTransferRequest(event.payload);
+        setTransferModalOpened(true);
+      }
+    );
+
+    // Listen for file transfer rejection
+    const unlistenFileTransferRejected = listen(
+      "file-transfer-rejected",
+      (event) => {
+        notifications.show({
+          title: "Transfer Rejected",
+          message: `File transfer rejected: ${event.payload}`,
+          color: "yellow",
+        });
+      }
+    );
+
+    // Listen for file transfer timeout
+    const unlistenFileTransferTimeout = listen(
+      "file-transfer-timeout",
+      (event) => {
+        notifications.show({
+          title: "Transfer Timeout",
+          message: `File transfer timed out: ${event.payload}`,
+          color: "orange",
+          autoClose: 5000,
+        });
+        // Close the modal if it's still open for this transfer
+        if (fileTransferRequest?.transfer_id === event.payload) {
+          setTransferModalOpened(false);
+          setFileTransferRequest(null);
+        }
+      }
+    );
+
+    // Listen for file transfer errors
+    const unlistenFileTransferError = listen("file-receive-error", (event) => {
+      notifications.show({
+        title: "Transfer Error",
+        message: `Failed to save file: ${event.payload}`,
+        color: "red",
+      });
     });
 
     // Listen for media scan trigger on Android
@@ -187,6 +246,10 @@ export default function Home() {
       unlistenFileStart.then((f) => f());
       unlistenFileComplete.then((f) => f());
       unlistenMessage.then((f) => f());
+      unlistenFileTransferRequest.then((f) => f());
+      unlistenFileTransferRejected.then((f) => f());
+      unlistenFileTransferTimeout.then((f) => f());
+      unlistenFileTransferError.then((f) => f());
       unlistenMediaScan.then((f) => f());
       unlistenFileDrop.then((f) => f());
     };
@@ -319,6 +382,49 @@ export default function Home() {
     } finally {
       // Keep spinning for a bit longer to show it's searching
       setTimeout(() => setRefreshing(false), 2000);
+    }
+  };
+
+  const handleAcceptTransfer = async () => {
+    if (!fileTransferRequest) return;
+
+    try {
+      await invoke("respond_to_file_transfer", {
+        transferId: fileTransferRequest.transfer_id,
+        accepted: true,
+      });
+      setTransferModalOpened(false);
+      setFileTransferRequest(null);
+    } catch (e) {
+      notifications.show({
+        title: "Error",
+        message: `Failed to accept transfer: ${e}`,
+        color: "red",
+      });
+    }
+  };
+
+  const handleRejectTransfer = async () => {
+    if (!fileTransferRequest) return;
+
+    try {
+      await invoke("respond_to_file_transfer", {
+        transferId: fileTransferRequest.transfer_id,
+        accepted: false,
+      });
+      setTransferModalOpened(false);
+      setFileTransferRequest(null);
+      notifications.show({
+        title: "Transfer Rejected",
+        message: "File transfer rejected",
+        color: "yellow",
+      });
+    } catch (e) {
+      notifications.show({
+        title: "Error",
+        message: `Failed to reject transfer: ${e}`,
+        color: "red",
+      });
     }
   };
 
@@ -480,6 +586,17 @@ export default function Home() {
           onClose={() => setMessageModalOpened(false)}
           senderAlias={receivedMessage.senderAlias}
           content={receivedMessage.content}
+        />
+      )}
+
+      {fileTransferRequest && (
+        <FileTransferConfirmModal
+          opened={transferModalOpened}
+          onClose={() => setTransferModalOpened(false)}
+          onAccept={handleAcceptTransfer}
+          onReject={handleRejectTransfer}
+          fileName={fileTransferRequest.file_name}
+          fileSize={fileTransferRequest.file_size}
         />
       )}
     </>
