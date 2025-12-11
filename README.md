@@ -1,4 +1,4 @@
-# LocalSend Rust
+# Local Share
 
 A cross-platform file sharing application built with Tauri, React, and TypeScript.
 
@@ -19,9 +19,17 @@ npm run tauri build
 
 ### Build for Android
 
+**⚠️ First-time setup**: Android APKs must be signed. See [ANDROID_SIGNING_QUICKSTART.md](ANDROID_SIGNING_QUICKSTART.md) for quick setup or [ANDROID_SIGNING_SETUP.md](ANDROID_SIGNING_SETUP.md) for detailed instructions.
+
 ```bash
+# Initialize Android project (first time only)
+npm run tauri android init
+
+# Build signed APK
 npm run tauri android build -- --release
 ```
+
+**Output**: `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`
 
 ## Automated Builds with GitHub Actions
 

@@ -135,7 +135,7 @@ jobs:
               -alias upload \
               -storepass android \
               -keypass android \
-              -dname "CN=Tauri App, OU=Development, O=MyCompany, L=City, S=State, C=US"
+              -dname "CN=Local Share, OU=Development, O=MyCompany, L=City, S=State, C=US"
             echo "storePassword=android" > src-tauri/gen/android/key.properties
             echo "keyPassword=android" >> src-tauri/gen/android/key.properties
             echo "keyAlias=upload" >> src-tauri/gen/android/key.properties
@@ -189,14 +189,14 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}-{1}', steps.date.outputs.date, github.run_number) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('LocalSend Rust {0}', github.ref_name) || format('Build {0} (Run {1})', steps.date.outputs.date, github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Local Share {0}', github.ref_name) || format('Build {0} (Run {1})', steps.date.outputs.date, github.run_number) }}
           files: |
             ./artifacts/windows/**/*
             ./artifacts/android/**/*.apk
           draft: false
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
           body: |
-            # LocalSend Rust ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('{0} Run {1}', steps.date.outputs.date, github.run_number) }}
+            # Local Share ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('{0} Run {1}', steps.date.outputs.date, github.run_number) }}
 
             Build triggered by ${{ github.event_name }} on ${{ github.ref }}.
 

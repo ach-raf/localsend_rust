@@ -131,7 +131,7 @@ pub fn run() {
 
             // Start Discovery
             eprintln!("Starting discovery service...");
-            start_discovery(app.handle().clone());
+            start_discovery(app.handle().clone(), alias.clone());
 
             // Start HTTP Server
             let handle = app.handle().clone();

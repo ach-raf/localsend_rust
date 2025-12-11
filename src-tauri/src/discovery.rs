@@ -24,12 +24,10 @@ enum DiscoveryCommand {
     Refresh,
 }
 
-pub fn start_discovery(app: AppHandle) {
+pub fn start_discovery(app: AppHandle, my_alias: String) {
     let service_type = "_myshare_app._tcp.local.";
 
-    // Get all local IP addresses to filter out self
-    let my_ips = get_local_ips();
-    eprintln!("Local IPs for filtering: {:?}", my_ips);
+    eprintln!("Starting discovery - filtering out self: {}", my_alias);
 
     let peers_map: Arc<Mutex<HashMap<String, Peer>>> = Arc::new(Mutex::new(HashMap::new()));
     let peers_map_clone = peers_map.clone();
@@ -63,7 +61,6 @@ pub fn start_discovery(app: AppHandle) {
                             Ok(receiver) => {
                                 eprintln!("✓ mDNS browse started successfully");
                                 daemon_opt = Some(daemon);
-                                should_restart = false;
 
                                 // Process events with timeout
                                 loop {
@@ -78,7 +75,7 @@ pub fn start_discovery(app: AppHandle) {
                                         Ok(event) => {
                                             process_mdns_event(
                                                 event,
-                                                &my_ips,
+                                                &my_alias,
                                                 &peers_map_clone,
                                                 &app,
                                             );
@@ -108,7 +105,7 @@ pub fn start_discovery(app: AppHandle) {
 
 fn process_mdns_event(
     event: ServiceEvent,
-    my_ips: &[String],
+    my_alias: &str,
     peers_map: &Arc<Mutex<HashMap<String, Peer>>>,
     app: &AppHandle,
 ) {
@@ -122,6 +119,26 @@ fn process_mdns_event(
         ServiceEvent::ServiceResolved(info) => {
             eprintln!("Service resolved: {}", info.get_fullname());
 
+            // Get alias first to check if this is our own device
+            let alias = match info.get_property_val("alias") {
+                Some(val) => {
+                    // Handle the nested Option structure
+                    match val {
+                        Some(bytes) => String::from_utf8_lossy(bytes).to_string(),
+                        None => "Unknown".to_string(),
+                    }
+                }
+                None => "Unknown".to_string(),
+            };
+
+            eprintln!("  Alias: {}", alias);
+
+            // Skip if this is our own device (simple alias comparison)
+            if alias == my_alias {
+                eprintln!("  Skipping - this is our own device");
+                return;
+            }
+
             // Get all IP addresses from the service
             let addresses: Vec<String> = info
                 .get_addresses()
@@ -132,30 +149,16 @@ fn process_mdns_event(
             eprintln!("  Addresses: {:?}", addresses);
             eprintln!("  Port: {}", info.get_port());
 
-            // Try to get the first valid IP address
+            // Get the first valid IP address
             let ip = addresses
                 .iter()
-                .find(|addr| !addr.is_empty() && !my_ips.contains(*addr))
+                .find(|addr| !addr.is_empty())
                 .cloned()
                 .unwrap_or_default();
 
-            // Skip if this is our own device or no valid IP found
+            // Skip if no valid IP found
             if !ip.is_empty() {
                 let hostname = info.get_fullname().to_string();
-
-                let alias = match info.get_property_val("alias") {
-                    Some(val) => {
-                        // Handle the nested Option structure
-                        match val {
-                            Some(bytes) => String::from_utf8_lossy(bytes).to_string(),
-                            None => "Unknown".to_string(),
-                        }
-                    }
-                    None => "Unknown".to_string(),
-                };
-
-                eprintln!("  Alias: {}", alias);
-
                 let port = info.get_port();
                 let key = info.get_fullname().to_string();
 
@@ -170,7 +173,7 @@ fn process_mdns_event(
                 peers_map.lock().unwrap().insert(key, peer);
                 emit_peers(app, peers_map);
             } else {
-                eprintln!("  Skipping - either own device or no valid IP");
+                eprintln!("  Skipping - no valid IP found");
             }
         }
         ServiceEvent::ServiceRemoved(_service_type, fullname) => {
@@ -183,28 +186,6 @@ fn process_mdns_event(
             eprintln!("Other mDNS event: {:?}", event);
         }
     }
-}
-
-// Helper function to get all local IP addresses
-fn get_local_ips() -> Vec<String> {
-    let mut ips = Vec::new();
-
-    // Add primary local IP
-    if let Ok(ip) = local_ip_address::local_ip() {
-        ips.push(ip.to_string());
-    }
-
-    // Add all interface IPs on Windows (important for multi-homed systems)
-    if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
-        for (_name, ip) in interfaces {
-            let ip_str = ip.to_string();
-            if !ips.contains(&ip_str) {
-                ips.push(ip_str);
-            }
-        }
-    }
-
-    ips
 }
 
 fn emit_peers(app: &AppHandle, peers: &Arc<Mutex<HashMap<String, Peer>>>) {

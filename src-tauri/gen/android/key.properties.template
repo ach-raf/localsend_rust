@@ -1,0 +1,21 @@
+# Android Signing Configuration Template
+#
+# Copy this file to 'key.properties' and fill in your credentials
+# cp key.properties.template key.properties
+#
+# For development (quick testing):
+storePassword=android
+keyPassword=android
+keyAlias=upload
+storeFile=upload-keystore.jks
+
+# For production (Google Play):
+# storePassword=YOUR_STRONG_PASSWORD_HERE
+# keyPassword=YOUR_STRONG_PASSWORD_HERE
+# keyAlias=production
+# storeFile=production-keystore.jks
+#
+# Remember:
+# - The storeFile path is relative to the 'app/' directory
+# - Never commit production credentials to version control
+# - Keep your production keystore backed up in multiple secure locations
