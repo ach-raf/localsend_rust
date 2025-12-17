@@ -12,6 +12,9 @@ use tauri::{AppHandle, Emitter};
 static DISCOVERY_CONTROL: Lazy<Arc<Mutex<Option<Sender<DiscoveryCommand>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 
+// Global handle to store my own alias for filtering
+static MY_ALIAS: Lazy<Arc<Mutex<String>>> = Lazy::new(|| Arc::new(Mutex::new(String::new())));
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Peer {
     pub ip: String,
@@ -22,12 +25,16 @@ pub struct Peer {
 
 enum DiscoveryCommand {
     Refresh,
+    UpdateAlias(String),
 }
 
 pub fn start_discovery(app: AppHandle, my_alias: String) {
     let service_type = "_myshare_app._tcp.local.";
 
     eprintln!("Starting discovery - filtering out self: {}", my_alias);
+
+    // Store the initial alias
+    *MY_ALIAS.lock().unwrap() = my_alias.clone();
 
     let peers_map: Arc<Mutex<HashMap<String, Peer>>> = Arc::new(Mutex::new(HashMap::new()));
     let peers_map_clone = peers_map.clone();
@@ -42,6 +49,7 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
         // Flag to force refresh
         let mut should_restart = true;
         let mut daemon_opt: Option<ServiceDaemon> = None;
+        let mut current_alias = my_alias;
 
         loop {
             // Create or recreate daemon if needed
@@ -64,18 +72,37 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
 
                                 // Process events with timeout
                                 loop {
-                                    // Check for refresh command
-                                    if let Ok(DiscoveryCommand::Refresh) = cmd_receiver.try_recv() {
-                                        eprintln!("Refresh command received!");
-                                        should_restart = true;
-                                        break;
+                                    // Check for refresh or alias update command
+                                    match cmd_receiver.try_recv() {
+                                        Ok(DiscoveryCommand::Refresh) => {
+                                            eprintln!("Refresh command received!");
+                                            should_restart = true;
+                                            break;
+                                        }
+                                        Ok(DiscoveryCommand::UpdateAlias(new_alias)) => {
+                                            eprintln!(
+                                                "Alias update command received: {}",
+                                                new_alias
+                                            );
+                                            current_alias = new_alias;
+                                            // Update the global alias
+                                            *MY_ALIAS.lock().unwrap() = current_alias.clone();
+                                            // Clear peers and restart to re-filter
+                                            peers_map_clone.lock().unwrap().clear();
+                                            emit_peers(&app, &peers_map_clone);
+                                            should_restart = true;
+                                            break;
+                                        }
+                                        Err(_) => {
+                                            // No command, continue processing events
+                                        }
                                     }
 
                                     match receiver.recv_timeout(Duration::from_millis(500)) {
                                         Ok(event) => {
                                             process_mdns_event(
                                                 event,
-                                                &my_alias,
+                                                &current_alias,
                                                 &peers_map_clone,
                                                 &app,
                                             );
@@ -260,6 +287,35 @@ pub fn refresh_discovery() -> Result<(), String> {
                 }
                 Err(e) => {
                     let err_msg = format!("Failed to send refresh command: {}", e);
+                    eprintln!("  {}", err_msg);
+                    Err(err_msg)
+                }
+            }
+        } else {
+            let err_msg = "Discovery control not initialized".to_string();
+            eprintln!("  {}", err_msg);
+            Err(err_msg)
+        }
+    } else {
+        let err_msg = "Failed to lock discovery control".to_string();
+        eprintln!("  {}", err_msg);
+        Err(err_msg)
+    }
+}
+
+// Function to update alias in discovery
+pub fn update_alias(new_alias: String) -> Result<(), String> {
+    eprintln!("Updating alias to: {}", new_alias);
+
+    if let Ok(control_lock) = DISCOVERY_CONTROL.lock() {
+        if let Some(sender) = control_lock.as_ref() {
+            match sender.send(DiscoveryCommand::UpdateAlias(new_alias)) {
+                Ok(_) => {
+                    eprintln!("  Alias update command sent successfully");
+                    Ok(())
+                }
+                Err(e) => {
+                    let err_msg = format!("Failed to send alias update command: {}", e);
                     eprintln!("  {}", err_msg);
                     Err(err_msg)
                 }

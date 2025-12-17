@@ -1,5 +1,15 @@
-import { Modal, Textarea, Button, Group, Stack, Text, CopyButton } from "@mantine/core";
-import { IconCopy, IconCheck } from "@tabler/icons-react";
+import {
+  Modal,
+  Textarea,
+  Button,
+  Group,
+  Stack,
+  Text,
+  CopyButton,
+} from "@mantine/core";
+import { IconCopy, IconCheck, IconExternalLink } from "@tabler/icons-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { notifications } from "@mantine/notifications";
 
 interface TextMessageModalProps {
   opened: boolean;
@@ -14,6 +24,23 @@ export default function TextMessageModal({
   senderAlias,
   content,
 }: TextMessageModalProps) {
+  // Check if content is a URL (starts with http:// or https://)
+  const isUrl =
+    content.trim().startsWith("http://") ||
+    content.trim().startsWith("https://");
+
+  const handleOpenUrl = async () => {
+    try {
+      await openUrl(content.trim());
+    } catch (e) {
+      notifications.show({
+        title: "Error",
+        message: `Failed to open URL: ${e}`,
+        color: "red",
+      });
+    }
+  };
+
   return (
     <Modal
       opened={opened}
@@ -60,12 +87,14 @@ export default function TextMessageModal({
             },
           }}
         />
-        
+
         <Group justify="space-between" gap="sm">
           <CopyButton value={content} timeout={2000}>
             {({ copied, copy }) => (
               <Button
-                leftSection={copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
+                leftSection={
+                  copied ? <IconCheck size={16} /> : <IconCopy size={16} />
+                }
                 color={copied ? "teal" : "blue"}
                 variant="filled"
                 onClick={copy}
@@ -76,8 +105,20 @@ export default function TextMessageModal({
               </Button>
             )}
           </CopyButton>
-          <Button 
-            variant="light" 
+          {isUrl && (
+            <Button
+              leftSection={<IconExternalLink size={16} />}
+              variant="filled"
+              color="green"
+              onClick={handleOpenUrl}
+              fullWidth
+              style={{ flex: 1 }}
+            >
+              Open in Browser
+            </Button>
+          )}
+          <Button
+            variant="light"
             onClick={onClose}
             fullWidth
             style={{ flex: 1 }}
@@ -89,4 +130,3 @@ export default function TextMessageModal({
     </Modal>
   );
 }
-
