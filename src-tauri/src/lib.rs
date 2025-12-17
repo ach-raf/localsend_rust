@@ -4,13 +4,13 @@ mod server;
 mod transfer;
 
 use crate::config::{generate_anime_name, load_config, save_config, AppConfig};
-use crate::discovery::{refresh_discovery, register_service, start_discovery};
+use crate::discovery::{refresh_discovery, register_service, start_discovery, update_alias};
 use crate::server::start_server;
 use crate::transfer::{send_file, send_file_bytes, send_text};
 use mdns_sd::ServiceDaemon;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
 
 #[derive(Clone)]
@@ -42,10 +42,37 @@ fn save_settings(
     state: State<'_, AppState>,
     new_config: AppConfig,
 ) -> Result<(), String> {
+    let old_alias = {
+        let config = state.config.lock().unwrap();
+        config.alias.clone()
+    };
+
     let mut config = state.config.lock().unwrap();
     *config = new_config.clone();
     save_config(&app, &new_config)?;
-    // TODO: Restart services if needed
+    drop(config); // Release lock before doing heavy operations
+
+    // If alias changed, re-register mDNS service and update discovery
+    if old_alias != new_config.alias {
+        eprintln!(
+            "Alias changed from '{}' to '{}', re-registering service...",
+            old_alias, new_config.alias
+        );
+
+        // Unregister old service and register new one
+        let daemon = register_service(&new_config.alias, new_config.port)?;
+        *state.service_daemon.lock().unwrap() = Some(daemon);
+
+        // Update the discovery system with new alias
+        update_alias(new_config.alias.clone())?;
+
+        // Emit event to frontend to update UI
+        app.emit("alias-changed", new_config.alias.clone())
+            .map_err(|e| e.to_string())?;
+
+        eprintln!("Service re-registered and discovery updated successfully!");
+    }
+
     Ok(())
 }
 

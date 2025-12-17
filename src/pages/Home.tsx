@@ -21,6 +21,7 @@ import {
   IconDeviceDesktop,
   IconSend,
   IconRefresh,
+  IconX,
 } from "@tabler/icons-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -489,9 +490,19 @@ export default function Home() {
           <Grid.Col span={{ base: 12, md: 8 }}>
             {selectedPeer ? (
               <Paper shadow="xs" p="md" withBorder>
-                <Title order={3} mb="md">
-                  Send to {selectedPeer.alias}
-                </Title>
+                <Group justify="space-between" mb="md">
+                  <Title order={3}>Send to {selectedPeer.alias}</Title>
+                  <Tooltip label="Close">
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      onClick={() => setSelectedPeer(null)}
+                      size="lg"
+                    >
+                      <IconX size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
                 <Tabs defaultValue="files">
                   <Tabs.List mb="md">
                     <Tabs.Tab
