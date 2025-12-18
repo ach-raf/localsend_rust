@@ -26,7 +26,26 @@ npm run tauri build
 npm run tauri android init
 
 # Build signed APK
-npm run tauri android build -- --release
+npm run tauri android build --split-per-abi --apk true
+```
+
+With --split-per-abi
+
+Creates separate APKs for each architecture:
+
+```bash
+my-app-arm64-v8a.apk           (15 MB)  ← Modern
+phonesmy-app-armeabi-v7a.apk   (15 MB)  ← Older
+phonesmy-app-x86_64.apk        (15 MB)  ← Emulators/tablets
+my-app-x86.apk                 (15 MB)  ← Rare devices
+```
+
+Can also use
+
+```bash
+--apk true or --aab true - Explicitly specify which format to build
+
+-t <target> - Specify target architectures (e.g., aarch64, armv7, etc.)
 ```
 
 **Output**: `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`

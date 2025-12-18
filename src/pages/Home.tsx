@@ -22,6 +22,7 @@ import {
   IconSend,
   IconRefresh,
   IconX,
+  IconArrowLeft,
 } from "@tabler/icons-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -49,6 +50,14 @@ interface FileTransferRequest {
   file_size?: number;
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
 export default function Home() {
   const [peers, setPeers] = useState<Peer[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
@@ -70,32 +79,74 @@ export default function Home() {
   }, [selectedPeer]);
 
   useEffect(() => {
-    // Initial fetch (if you had a command, but we rely on events mostly)
+    // Trigger initial discovery on mount
+    invoke("refresh_peers").catch((e) => {
+      console.error("Failed to trigger initial discovery:", e);
+    });
+
     // Listen for peer updates
     const unlistenPeers = listen<Peer[]>("peers-update", (event) => {
-      setPeers(event.payload);
+      // Deduplicate peers by IP address (in case multiple mDNS entries exist)
+      const uniquePeers = event.payload.reduce((acc, peer) => {
+        // Use IP as the unique key - if multiple entries have same IP, keep the most recent
+        const existingIndex = acc.findIndex((p) => p.ip === peer.ip);
+        if (existingIndex === -1) {
+          acc.push(peer);
+        } else {
+          // Replace with the new entry (assumes newer is better)
+          acc[existingIndex] = peer;
+        }
+        return acc;
+      }, [] as Peer[]);
+      setPeers(uniquePeers);
     });
 
-    const unlistenFileStart = listen("file-receive-start", (event) => {
+    const unlistenFileStart = listen("file-receive-start", (event: any) => {
+      const { transfer_id, file_name } = event.payload;
       notifications.show({
         title: "Receiving File",
-        message: `Receiving ${event.payload}...`,
+        message: `Receiving ${file_name}...`,
         loading: true,
         autoClose: false,
-        id: "file-receive",
+        id: transfer_id,
       });
     });
 
-    const unlistenFileComplete = listen("file-receive-complete", (event) => {
+    const unlistenProgress = listen("transfer-progress", (event: any) => {
+      const { transfer_id, current_bytes, total_bytes } = event.payload;
+      const percent = total_bytes
+        ? Math.round((current_bytes / total_bytes) * 100)
+        : 0;
+      const sizeStr = total_bytes ? formatFileSize(total_bytes) : "Unknown";
+      const currentStr = formatFileSize(current_bytes);
+
+      // Try to update notification if it exists (for receiver or sender if ID matches)
+      // Note: Mantine notifications.update does not create if missing?
+      // Actually if sender, we created it in handleSelectFiles.
+      // If receiver, we created it in file-receive-start.
       notifications.update({
-        id: "file-receive",
-        title: "File Received",
-        message: `Successfully received ${event.payload}`,
-        color: "green",
-        loading: false,
-        autoClose: 5000,
+        id: transfer_id,
+        title: total_bytes ? `Transferring... ${percent}%` : "Transferring...",
+        message: `${currentStr} / ${sizeStr}`,
+        loading: true,
+        autoClose: false,
       });
     });
+
+    const unlistenFileComplete = listen(
+      "file-receive-complete",
+      (event: any) => {
+        const { transfer_id, file_name } = event.payload;
+        notifications.update({
+          id: transfer_id,
+          title: "File Received",
+          message: `Successfully received ${file_name}`,
+          color: "green",
+          loading: false,
+          autoClose: 5000,
+        });
+      }
+    );
 
     const unlistenMessage = listen("message-received", (event: any) => {
       setReceivedMessage({
@@ -200,7 +251,23 @@ export default function Home() {
                 filePath = decodeURIComponent(filePath);
               }
 
-              const fileName = filePath.split(/[\\/]/).pop() || filePath;
+              let fileName = filePath.split(/[\\/]/).pop() || filePath;
+
+              // On Android content URIs, try to get better filename
+              if (filePath.startsWith("content://")) {
+                try {
+                  const properName = await invoke<string>("get_file_name", {
+                    filePath,
+                  });
+                  fileName = properName;
+                } catch (e) {
+                  console.warn(
+                    "Could not get proper filename from content URI:",
+                    e
+                  );
+                }
+              }
+
               console.log(`Attempting to send file: ${fileName} (${filePath})`);
 
               // On desktop platforms, use direct path method
@@ -253,6 +320,7 @@ export default function Home() {
       unlistenFileTransferError.then((f) => f());
       unlistenMediaScan.then((f) => f());
       unlistenFileDrop.then((f) => f());
+      unlistenProgress.then((f) => f());
     };
   }, []); // Empty dependency array - only run on mount/unmount
 
@@ -283,8 +351,33 @@ export default function Home() {
       setSending(true);
       for (const filePath of filePaths) {
         try {
-          // Extract filename from path
-          const fileName = filePath.split(/[\\/]/).pop() || filePath;
+          // Extract filename from path - handle both regular paths and content URIs
+          let fileName = filePath.split(/[\\/]/).pop() || filePath;
+
+          // On Android content URIs, try to get better filename
+          if (filePath.startsWith("content://")) {
+            try {
+              // Try to get proper filename from backend
+              const properName = await invoke<string>("get_file_name", {
+                filePath,
+              });
+              fileName = properName;
+            } catch (e) {
+              console.warn(
+                "Could not get proper filename from content URI:",
+                e
+              );
+              // Keep the extracted name as fallback
+            }
+          }
+
+          notifications.show({
+            id: fileName,
+            title: `Sending ${fileName}`,
+            message: "Starting...",
+            loading: true,
+            autoClose: false,
+          });
 
           // Try direct path method first (Desktop optimization)
           try {
@@ -296,10 +389,14 @@ export default function Home() {
           } catch (pathError) {
             // Fall back to reading file bytes (for mobile/content URIs)
             try {
+              console.log(
+                "Path method failed, trying bytes method with filename:",
+                fileName
+              );
               // Try to read the file as bytes using the fs plugin
               const fileData = await readFile(filePath);
 
-              // Send as bytes
+              // Send as bytes with the extracted/corrected filename
               await invoke("send_file_bytes_to_peer", {
                 peerIp: selectedPeer.ip,
                 peerPort: selectedPeer.port,
@@ -313,10 +410,13 @@ export default function Home() {
             }
           }
 
-          notifications.show({
+          notifications.update({
+            id: fileName,
             title: "Sent",
-            message: `Sent ${fileName}`,
+            message: `Successfully sent ${fileName}`,
             color: "green",
+            loading: false,
+            autoClose: 2000,
           });
         } catch (e) {
           const fileName = filePath.split(/[\\/]/).pop() || filePath;
@@ -431,12 +531,47 @@ export default function Home() {
 
   return (
     <>
-      <Container size="xl">
-        <Grid>
-          <Grid.Col span={{ base: 12, md: 4 }}>
-            <Paper shadow="xs" p="md" withBorder h="100%">
-              <Group justify="space-between" mb="md">
-                <Title order={3}>Nearby Peers</Title>
+      <Container
+        size="100%"
+        px={{ base: "sm", sm: "md", lg: "xl" }}
+        pt={{ base: "md", sm: 0 }}
+        className="animate-fade-in"
+      >
+        <Grid gutter={{ base: "sm", sm: "md", lg: "lg" }}>
+          <Grid.Col
+            span={{ base: 12, sm: 12, md: 5, lg: 4, xl: 3 }}
+            className={selectedPeer ? "mobile-hide-when-selected" : ""}
+          >
+            <Paper
+              shadow="md"
+              p={{ base: "md", sm: "lg" }}
+              withBorder
+              h="100%"
+              className="peers-panel-paper"
+              style={{
+                background:
+                  "linear-gradient(135deg, var(--bg) 0%, var(--bg-dark) 100%)",
+              }}
+            >
+              <Group
+                justify="space-between"
+                mb="lg"
+                wrap="nowrap"
+                className="responsive-header-group"
+              >
+                <Title
+                  order={3}
+                  className="responsive-title"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    backgroundClip: "text",
+                  }}
+                >
+                  Nearby Peers
+                </Title>
                 <Tooltip label="Refresh discovery">
                   <ActionIcon
                     variant="light"
@@ -444,129 +579,309 @@ export default function Home() {
                     onClick={handleRefreshPeers}
                     loading={refreshing}
                     size="lg"
+                    className="depth-card-hover responsive-icon-button"
                   >
-                    <IconRefresh size={18} />
+                    <IconRefresh size={18} className="responsive-icon" />
                   </ActionIcon>
                 </Tooltip>
               </Group>
+
               {peers.length === 0 ? (
-                <Text c="dimmed">
-                  No peers found. Open the app on another device.
-                </Text>
+                <div
+                  className="depth-inset responsive-empty-state"
+                  style={{
+                    minHeight: "min(200px, 40vh)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.75rem",
+                    textAlign: "center",
+                    padding: "clamp(1rem, 3vw, 2rem)",
+                  }}
+                >
+                  <ThemeIcon
+                    size={64}
+                    variant="light"
+                    color="gray"
+                    radius="xl"
+                    className="responsive-theme-icon"
+                  >
+                    <IconDeviceDesktop
+                      size={36}
+                      className="responsive-icon-large"
+                    />
+                  </ThemeIcon>
+                  <div>
+                    <Text fw={500} mb="xs" className="responsive-text-md">
+                      No peers found
+                    </Text>
+                    <Text c="dimmed" className="responsive-text-sm">
+                      Open the app on another device
+                    </Text>
+                  </div>
+                </div>
               ) : (
-                <Stack>
+                <Stack gap="sm">
                   {peers.map((peer) => (
-                    <Paper
+                    <div
                       key={peer.ip + peer.port}
-                      withBorder
-                      p="sm"
-                      style={{
-                        cursor: "pointer",
-                        borderColor:
-                          selectedPeer?.ip === peer.ip
-                            ? "var(--mantine-color-blue-6)"
-                            : undefined,
-                      }}
+                      className={`depth-card-interactive ${
+                        selectedPeer?.ip === peer.ip
+                          ? "depth-card-selected"
+                          : ""
+                      }`}
                       onClick={() => setSelectedPeer(peer)}
                     >
-                      <Group>
-                        <ThemeIcon size="lg" variant="light">
-                          <IconDeviceDesktop />
+                      <Group
+                        gap="md"
+                        wrap="nowrap"
+                        align="flex-start"
+                        className="responsive-peer-group"
+                      >
+                        <ThemeIcon
+                          size={48}
+                          variant="light"
+                          color="blue"
+                          radius="md"
+                          className="responsive-peer-icon"
+                          style={{
+                            flexShrink: 0,
+                            boxShadow:
+                              selectedPeer?.ip === peer.ip
+                                ? "var(--glow-primary)"
+                                : "var(--shadow-s)",
+                          }}
+                        >
+                          <IconDeviceDesktop size={24} />
                         </ThemeIcon>
-                        <div>
-                          <Text fw={500}>{peer.alias}</Text>
-                          <Text size="xs" c="dimmed">
+                        <div
+                          style={{ flex: 1, minWidth: 0, overflow: "hidden" }}
+                        >
+                          <Text
+                            fw={600}
+                            className="responsive-peer-name"
+                            style={{
+                              color:
+                                selectedPeer?.ip === peer.ip
+                                  ? "var(--accent-primary-light)"
+                                  : "var(--text-primary)",
+                              wordBreak: "break-word",
+                              lineHeight: "1.3",
+                            }}
+                          >
+                            {peer.alias}
+                          </Text>
+                          <Text
+                            size="xs"
+                            c="dimmed"
+                            className="responsive-peer-ip"
+                            style={{
+                              fontFamily: "monospace",
+                              marginTop: "0.25rem",
+                            }}
+                          >
                             {peer.ip}
                           </Text>
                         </div>
                       </Group>
-                    </Paper>
+                    </div>
                   ))}
                 </Stack>
               )}
             </Paper>
           </Grid.Col>
 
-          <Grid.Col span={{ base: 12, md: 8 }}>
+          <Grid.Col
+            span={{ base: 12, sm: 12, md: 7, lg: 8, xl: 9 }}
+            className={!selectedPeer ? "mobile-hide-when-not-selected" : ""}
+          >
             {selectedPeer ? (
-              <Paper shadow="xs" p="md" withBorder>
-                <Group justify="space-between" mb="md">
-                  <Title order={3}>Send to {selectedPeer.alias}</Title>
+              <Paper
+                shadow="md"
+                p={{ base: "md", sm: "lg" }}
+                withBorder
+                className="send-panel-paper"
+                style={{
+                  background:
+                    "linear-gradient(135deg, var(--bg) 0%, var(--bg-dark) 100%)",
+                }}
+              >
+                <Group
+                  justify="space-between"
+                  mb="lg"
+                  wrap="nowrap"
+                  align="flex-start"
+                  className="responsive-header-group"
+                >
+                  <Group
+                    gap="sm"
+                    wrap="nowrap"
+                    style={{ flex: 1, minWidth: 0, overflow: "hidden" }}
+                  >
+                    <Tooltip label="Back to peers">
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        onClick={() => setSelectedPeer(null)}
+                        size="lg"
+                        className="depth-card-hover mobile-back-button"
+                      >
+                        <IconArrowLeft size={18} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                      <Text size="sm" c="dimmed" tt="uppercase" fw={600} mb={4}>
+                        Send to
+                      </Text>
+                      <Title
+                        order={3}
+                        className="responsive-title"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
+                          WebkitBackgroundClip: "text",
+                          WebkitTextFillColor: "transparent",
+                          backgroundClip: "text",
+                          wordBreak: "break-word",
+                          lineHeight: "1.2",
+                        }}
+                      >
+                        {selectedPeer.alias}
+                      </Title>
+                    </div>
+                  </Group>
                   <Tooltip label="Close">
                     <ActionIcon
                       variant="subtle"
                       color="gray"
                       onClick={() => setSelectedPeer(null)}
                       size="lg"
+                      className="depth-card-hover mobile-hide-close-button"
                     >
                       <IconX size={18} />
                     </ActionIcon>
                   </Tooltip>
                 </Group>
+
                 <Tabs defaultValue="files">
-                  <Tabs.List mb="md">
+                  <Tabs.List mb="lg" className="responsive-tabs-list">
                     <Tabs.Tab
                       value="files"
-                      leftSection={<IconFile size={14} />}
+                      leftSection={
+                        <IconFile size={16} className="responsive-icon" />
+                      }
+                      className="responsive-tab"
                     >
                       Files
                     </Tabs.Tab>
-                    <Tabs.Tab value="text" leftSection={<IconSend size={14} />}>
+                    <Tabs.Tab
+                      value="text"
+                      leftSection={
+                        <IconSend size={16} className="responsive-icon" />
+                      }
+                      className="responsive-tab"
+                    >
                       Text
                     </Tabs.Tab>
                   </Tabs.List>
 
                   <Tabs.Panel value="files">
-                    <Paper
-                      withBorder
-                      p="xl"
+                    <div
+                      className="depth-inset upload-area"
                       style={{
-                        minHeight: 220,
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
                         justifyContent: "center",
                         gap: "1rem",
+                        padding: "clamp(1rem, 3vw, 2rem)",
                       }}
                     >
-                      <ThemeIcon size={60} variant="light" color="blue">
-                        <IconUpload size={32} />
-                      </ThemeIcon>
-                      <div style={{ textAlign: "center" }}>
-                        <Text size="xl">
+                      <div
+                        className="responsive-upload-icon-container"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
+                          borderRadius: "clamp(12px, 3vw, 20px)",
+                          padding: "clamp(1rem, 3vw, 1.5rem)",
+                          boxShadow: "var(--shadow-m), var(--glow-primary)",
+                        }}
+                      >
+                        <IconUpload
+                          size={48}
+                          color="white"
+                          stroke={2}
+                          className="responsive-upload-icon"
+                        />
+                      </div>
+                      <div
+                        style={{
+                          textAlign: "center",
+                          maxWidth: "100%",
+                          padding: "0 0.5rem",
+                        }}
+                      >
+                        <Text
+                          fw={600}
+                          mb="xs"
+                          className="responsive-upload-title"
+                          style={{ wordBreak: "break-word" }}
+                        >
                           Send files to {selectedPeer.alias}
                         </Text>
-                        <Text size="sm" c="dimmed" mt={7}>
+                        <Text c="dimmed" className="responsive-upload-subtitle">
                           Drag & drop files here or click the button below
                         </Text>
                       </div>
                       <Button
-                        leftSection={<IconFile size={16} />}
+                        leftSection={<IconFile size={18} />}
                         onClick={handleSelectFiles}
                         loading={sending}
                         size="lg"
-                        mt="md"
+                        className="premium-button responsive-button"
+                        style={{
+                          minWidth: "clamp(160px, 40vw, 200px)",
+                          height: "clamp(48px, 10vw, 56px)",
+                          fontSize: "clamp(1.1rem, 2.5vw, 1.25rem)",
+                        }}
                       >
                         Select Files
                       </Button>
-                    </Paper>
+                    </div>
                   </Tabs.Panel>
 
                   <Tabs.Panel value="text">
-                    <Stack>
+                    <Stack gap="md" className="responsive-stack">
                       <Textarea
                         placeholder="Type a message..."
-                        minRows={4}
+                        minRows={6}
+                        autosize
+                        maxRows={10}
                         value={message}
                         onChange={(e) => setMessage(e.currentTarget.value)}
+                        className="responsive-textarea"
+                        styles={{
+                          input: {
+                            fontSize: "clamp(1.1rem, 2.5vw, 1.25rem)",
+                            lineHeight: "1.6",
+                          },
+                        }}
                       />
                       <Button
-                        rightSection={<IconSend size={14} />}
+                        rightSection={<IconSend size={16} />}
                         onClick={handleSendMessage}
                         loading={sending}
                         disabled={!message.trim()}
+                        size="lg"
+                        className="premium-button responsive-button"
+                        fullWidth
+                        style={{
+                          height: "clamp(48px, 10vw, 56px)",
+                          fontSize: "clamp(1.1rem, 2.5vw, 1.25rem)",
+                        }}
                       >
-                        Send Text
+                        Send Message
                       </Button>
                     </Stack>
                   </Tabs.Panel>
@@ -574,17 +889,39 @@ export default function Home() {
               </Paper>
             ) : (
               <Paper
-                shadow="xs"
-                p="xl"
+                shadow="md"
+                p={{ base: "md", sm: "xl" }}
                 withBorder
                 h="100%"
+                className="depth-inset empty-state-panel"
                 style={{
                   display: "flex",
+                  flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
+                  gap: "1rem",
                 }}
               >
-                <Text c="dimmed">Select a peer to start sharing</Text>
+                <ThemeIcon
+                  size={80}
+                  variant="light"
+                  color="gray"
+                  radius="xl"
+                  className="responsive-theme-icon"
+                >
+                  <IconDeviceDesktop
+                    size={44}
+                    className="responsive-icon-large"
+                  />
+                </ThemeIcon>
+                <div style={{ textAlign: "center", padding: "0 1rem" }}>
+                  <Text fw={500} mb="xs" className="responsive-text-xl">
+                    Select a peer to start sharing
+                  </Text>
+                  <Text c="dimmed" className="responsive-text-sm">
+                    Choose a device from the nearby peers list
+                  </Text>
+                </div>
               </Paper>
             )}
           </Grid.Col>

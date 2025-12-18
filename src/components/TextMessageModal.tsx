@@ -2,7 +2,6 @@ import {
   Modal,
   Textarea,
   Button,
-  Group,
   Stack,
   Text,
   CopyButton,
@@ -46,60 +45,104 @@ export default function TextMessageModal({
       opened={opened}
       onClose={onClose}
       title={
-        <Text fw={600} size="lg">
-          Message from {senderAlias}
-        </Text>
+        <div>
+          <Text size="sm" c="dimmed" tt="uppercase" fw={600}>
+            Received Message
+          </Text>
+          <Text
+            fw={700}
+            size="1.5rem"
+            style={{
+              background:
+                "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}
+          >
+            From {senderAlias}
+          </Text>
+        </div>
       }
       centered
       size="lg"
+      radius="lg"
       overlayProps={{
-        backgroundOpacity: 0.55,
-        blur: 3,
+        backgroundOpacity: 0.7,
+        blur: 8,
       }}
       styles={{
         header: {
-          backgroundColor: "var(--mantine-color-dark-7)",
+          background: "linear-gradient(to bottom, var(--bg-light), var(--bg))",
+          borderBottom: "1px solid var(--border-subtle)",
+          padding: "1.5rem",
         },
         content: {
-          backgroundColor: "var(--mantine-color-dark-7)",
+          backgroundColor: "var(--bg)",
+          border: "1px solid var(--border-strong)",
+          boxShadow: "var(--shadow-l)",
+        },
+        body: {
+          padding: "1.5rem",
         },
       }}
     >
-      <Stack gap="md">
-        <Textarea
-          value={content}
-          readOnly
-          autosize
-          minRows={4}
-          maxRows={12}
-          styles={{
-            input: {
-              fontFamily: "monospace",
-              fontSize: "14px",
-              backgroundColor: "var(--mantine-color-dark-6)",
-              color: "var(--mantine-color-gray-0)",
-              border: "1px solid var(--mantine-color-dark-4)",
-              cursor: "text",
-              userSelect: "text",
-              "&:focus": {
-                borderColor: "var(--mantine-color-blue-5)",
+      <Stack gap="lg">
+        <div className="depth-card" style={{ padding: "1rem" }}>
+          <Textarea
+            value={content}
+            readOnly
+            autosize
+            minRows={4}
+            maxRows={12}
+            styles={{
+              input: {
+                fontFamily: "'Fira Code', 'Consolas', monospace",
+                fontSize: "1.1rem",
+                lineHeight: "1.6",
+                backgroundColor: "var(--bg-dark)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "8px",
+                cursor: "text",
+                userSelect: "text",
+                boxShadow: "var(--shadow-inset)",
+                padding: "1rem",
+                "&:focus": {
+                  borderColor: "var(--accent-primary)",
+                  boxShadow:
+                    "var(--shadow-s), 0 0 0 3px oklch(0.65 0.20 250 / 0.15)",
+                },
               },
-            },
-          }}
-        />
+            }}
+          />
+        </div>
 
-        <Group justify="space-between" gap="sm">
+        <Stack gap="sm">
           <CopyButton value={content} timeout={2000}>
             {({ copied, copy }) => (
               <Button
                 leftSection={
-                  copied ? <IconCheck size={16} /> : <IconCopy size={16} />
+                  copied ? <IconCheck size={18} /> : <IconCopy size={18} />
                 }
-                color={copied ? "teal" : "blue"}
                 variant="filled"
                 onClick={copy}
+                size="lg"
                 fullWidth
-                style={{ flex: 1 }}
+                style={{
+                  background: copied
+                    ? "linear-gradient(to bottom, var(--accent-success), oklch(0.55 0.18 145))"
+                    : "linear-gradient(to bottom, var(--accent-primary-light), var(--accent-primary))",
+                  border: "1px solid",
+                  borderColor: copied
+                    ? "oklch(0.55 0.18 145)"
+                    : "var(--accent-primary-dark)",
+                  boxShadow: copied
+                    ? "var(--shadow-s), var(--glow-success)"
+                    : "var(--shadow-s), var(--glow-primary)",
+                  height: "54px",
+                  fontSize: "1.15rem",
+                }}
               >
                 {copied ? "Copied!" : "Copy Text"}
               </Button>
@@ -107,25 +150,38 @@ export default function TextMessageModal({
           </CopyButton>
           {isUrl && (
             <Button
-              leftSection={<IconExternalLink size={16} />}
+              leftSection={<IconExternalLink size={18} />}
               variant="filled"
-              color="green"
               onClick={handleOpenUrl}
+              size="lg"
               fullWidth
-              style={{ flex: 1 }}
+              style={{
+                background:
+                  "linear-gradient(to bottom, var(--accent-success), oklch(0.55 0.18 145))",
+                border: "1px solid oklch(0.55 0.18 145)",
+                boxShadow: "var(--shadow-s), var(--glow-success)",
+                height: "54px",
+                fontSize: "1.15rem",
+              }}
             >
-              Open in Browser
+              Open URL
             </Button>
           )}
           <Button
             variant="light"
             onClick={onClose}
+            size="lg"
             fullWidth
-            style={{ flex: 1 }}
+            style={{
+              backgroundColor: "var(--bg-light)",
+              border: "1px solid var(--border-subtle)",
+              height: "54px",
+              fontSize: "1.15rem",
+            }}
           >
             Close
           </Button>
-        </Group>
+        </Stack>
       </Stack>
     </Modal>
   );
