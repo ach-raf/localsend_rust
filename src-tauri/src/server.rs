@@ -5,14 +5,18 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::Instant;
 use tauri::Emitter;
 use tauri::{AppHandle, Manager}; // Import Manager for path()
-use tokio::fs::{self, File};
-use tokio::io::AsyncWriteExt;
+use tokio::fs::{self};
 use tokio::sync::oneshot;
 use urlencoding::decode;
+
+#[cfg(target_os = "android")]
+use tauri_plugin_android_fs::{AndroidFsExt, PublicGeneralPurposeDir};
 
 #[derive(Clone)]
 struct ServerState {
@@ -28,6 +32,13 @@ struct FileTransferRequest {
     file_size: Option<u64>,
 }
 
+#[derive(Serialize, Clone)]
+struct ProgressPayload {
+    transfer_id: String,
+    current_bytes: u64,
+    total_bytes: Option<u64>,
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 struct MessagePayload {
     sender_alias: String,
@@ -39,7 +50,7 @@ pub async fn start_server(app: AppHandle, port: u16, pending_transfers: PendingT
     let download_dir = if cfg!(target_os = "android") {
         // On Android, use the public Downloads directory
         // This path is standard on Android
-        PathBuf::from("/storage/emulated/0/Download")
+        PathBuf::from("/storage/emulated/0/Downloads")
     } else if cfg!(target_os = "windows") {
         // On Windows, use the user's Downloads folder
         app.path().download_dir().unwrap_or_else(|_| {
@@ -88,7 +99,18 @@ pub async fn start_server(app: AppHandle, port: u16, pending_transfers: PendingT
 }
 
 async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipart) {
+    let mut file_size: Option<u64> = None;
+
     while let Ok(Some(mut field)) = multipart.next_field().await {
+        let name = field.name().unwrap_or("").to_string();
+        if name == "size" {
+            if let Ok(txt) = field.text().await {
+                file_size = txt.parse().ok();
+                eprintln!("Received file size: {:?}", file_size);
+            }
+            continue;
+        }
+
         let raw_file_name = if let Some(name) = field.file_name() {
             name.to_string()
         } else {
@@ -110,39 +132,6 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
             "Receiving file: {} (original: {})",
             sanitized_name, raw_file_name
         );
-
-        // Read all chunks into memory first (we need to wait for user confirmation)
-        let mut file_data = Vec::new();
-        loop {
-            match field.chunk().await {
-                Ok(Some(chunk)) => {
-                    file_data.extend_from_slice(&chunk);
-                }
-                Ok(None) => {
-                    break;
-                }
-                Err(e) => {
-                    eprintln!("Error reading chunk: {}", e);
-                    continue;
-                }
-            }
-        }
-
-        eprintln!("Read {} bytes from multipart", file_data.len());
-
-        if file_data.is_empty() {
-            eprintln!("Empty file received: {}", sanitized_name);
-            continue;
-        }
-
-        // Try to infer extension if missing
-        if std::path::Path::new(&sanitized_name).extension().is_none() {
-            if let Some(kind) = infer::get(&file_data) {
-                let ext = kind.extension();
-                eprintln!("Inferred extension for {}: .{}", sanitized_name, ext);
-                sanitized_name = format!("{}.{}", sanitized_name, ext);
-            }
-        }
 
         // Generate a unique transfer ID
         let transfer_id = format!(
@@ -167,7 +156,7 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
         let request = FileTransferRequest {
             transfer_id: transfer_id.clone(),
             file_name: sanitized_name.clone(),
-            file_size: Some(file_data.len() as u64),
+            file_size,
         };
 
         if let Err(e) = state.app_handle.emit("file-transfer-request", &request) {
@@ -210,52 +199,199 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
             let _ = state
                 .app_handle
                 .emit("file-transfer-rejected", &sanitized_name);
+            // We should stop here. If we continue, we risk reading the next field incorrectly or stalling.
+            // Best to drop the multipart stream by returning, which closes the connection.
+            return;
+        }
+
+        // User accepted, stream to file
+        eprintln!("Transfer accepted, streaming file: {}", sanitized_name);
+
+        let start_payload = json!({
+            "transfer_id": transfer_id,
+            "file_name": sanitized_name
+        });
+        let _ = state.app_handle.emit("file-receive-start", start_payload);
+
+        let mut current_bytes = 0;
+        let mut last_emit = Instant::now();
+        let mut first_chunk = true;
+        let mut write_error = false;
+        let mut file_data = Vec::new();
+
+        // Read all chunks into memory
+        loop {
+            match field.chunk().await {
+                Ok(Some(chunk)) => {
+                    if first_chunk {
+                        // Only infer extension if missing AND not already handled by sender
+                        // This prevents overriding extensions that were already determined
+                        if std::path::Path::new(&sanitized_name).extension().is_none() {
+                            // Check for APK signature first
+                            let is_apk = chunk.len() > 30
+                                && chunk.starts_with(&[0x50, 0x4B, 0x03, 0x04]) // PK ZIP signature
+                                && String::from_utf8_lossy(&chunk[..chunk.len().min(2048)])
+                                    .contains("AndroidManifest");
+
+                            if is_apk {
+                                eprintln!("Detected APK file on receive");
+                                sanitized_name = format!("{}.apk", sanitized_name);
+                            } else if let Some(kind) = infer::get(&chunk) {
+                                let ext = kind.extension();
+                                // Only add extension if it's not a generic ZIP (could be APK)
+                                if kind.mime_type() != "application/zip" {
+                                    eprintln!(
+                                        "Inferred extension for {}: .{}",
+                                        sanitized_name, ext
+                                    );
+                                    sanitized_name = format!("{}.{}", sanitized_name, ext);
+                                } else {
+                                    eprintln!(
+                                        "Skipping ZIP extension inference (might be APK or other)"
+                                    );
+                                }
+                            }
+                        }
+                        first_chunk = false;
+                    }
+
+                    file_data.extend_from_slice(&chunk);
+                    current_bytes += chunk.len() as u64;
+
+                    if last_emit.elapsed().as_millis() > 100 {
+                        last_emit = Instant::now();
+                        let _ = state.app_handle.emit(
+                            "transfer-progress",
+                            ProgressPayload {
+                                transfer_id: transfer_id.clone(),
+                                current_bytes,
+                                total_bytes: file_size,
+                            },
+                        );
+                    }
+                }
+                Ok(None) => break, // End of field
+                Err(e) => {
+                    eprintln!("Error reading chunk: {}", e);
+                    let _ = state.app_handle.emit("file-receive-error", &sanitized_name);
+                    write_error = true;
+                    break;
+                }
+            }
+        }
+
+        // If there was an error during reading, skip to next field
+        if write_error {
             continue;
         }
 
-        // User accepted, save the file
-        eprintln!("Transfer accepted, saving file: {}", sanitized_name);
-        let _ = state.app_handle.emit("file-receive-start", &sanitized_name);
+        // Now write the file using the appropriate method for the platform
+        #[cfg(target_os = "android")]
+        {
+            // On Android, use the Android FS plugin to write to Downloads via MediaStore
+            eprintln!("Using Android MediaStore to save file: {}", sanitized_name);
 
-        let file_path = state.download_dir.join(&sanitized_name);
+            let mime_type = if let Some(kind) = infer::get(&file_data) {
+                Some(kind.mime_type().to_string())
+            } else {
+                None
+            };
 
-        match File::create(&file_path).await {
-            Ok(mut file) => {
-                match file.write_all(&file_data).await {
-                    Ok(_) => {
-                        if let Err(e) = file.flush().await {
-                            eprintln!("Failed to flush file: {}", e);
-                        } else {
-                            eprintln!(
-                                "File saved successfully: {:?} ({} bytes)",
-                                file_path,
-                                file_data.len()
-                            );
+            let app_clone = state.app_handle.clone();
+            let data_clone = file_data.clone();
+            let name_clone = sanitized_name.clone();
 
-                            // On Android, trigger media scan to make file visible
-                            #[cfg(target_os = "android")]
-                            {
-                                if let Some(path_str) = file_path.to_str() {
-                                    let _ = state.app_handle.emit("trigger-media-scan", path_str);
-                                }
-                            }
-
-                            let _ = state
-                                .app_handle
-                                .emit("file-receive-complete", &sanitized_name);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to write file: {}", e);
-                        let _ = state.app_handle.emit("file-receive-error", &sanitized_name);
-                    }
+            match tokio::task::spawn_blocking(move || {
+                let api = app_clone.android_fs();
+                api.public_storage().write_new(
+                    None, // Use primary storage
+                    PublicGeneralPurposeDir::Download,
+                    &name_clone,
+                    mime_type.as_deref(),
+                    &data_clone,
+                )
+            })
+            .await
+            {
+                Ok(Ok(_)) => {
+                    eprintln!("File saved successfully via MediaStore: {}", sanitized_name);
+                }
+                Ok(Err(e)) => {
+                    eprintln!("Failed to save file via MediaStore: {}", e);
+                    let _ = state.app_handle.emit("file-receive-error", &sanitized_name);
+                    continue;
+                }
+                Err(e) => {
+                    eprintln!("Failed to spawn blocking task: {}", e);
+                    let _ = state.app_handle.emit("file-receive-error", &sanitized_name);
+                    continue;
                 }
             }
-            Err(e) => {
-                eprintln!("Failed to create file: {:?}", e);
-                let _ = state.app_handle.emit("file-receive-error", &sanitized_name);
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            // On other platforms, use standard file I/O
+            let final_path = state.download_dir.join(&sanitized_name);
+            eprintln!("Saving file to: {:?}", final_path);
+
+            // Remove existing file if it exists
+            if final_path.exists() {
+                eprintln!("Final file already exists, removing: {:?}", final_path);
+                if let Err(e) = fs::remove_file(&final_path).await {
+                    eprintln!("Failed to remove existing file: {}", e);
+                }
+            }
+
+            match fs::write(&final_path, &file_data).await {
+                Ok(_) => {
+                    eprintln!(
+                        "File saved successfully: {:?} ({} bytes)",
+                        final_path, current_bytes
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Failed to write file: {}", e);
+                    let _ = state.app_handle.emit("file-receive-error", &sanitized_name);
+                    continue;
+                }
             }
         }
+
+        eprintln!(
+            "File saved successfully: {} ({} bytes)",
+            sanitized_name, current_bytes
+        );
+
+        // Emit 100% progress first
+        eprintln!(
+            "Emitting 100% progress: {} / {}",
+            current_bytes, current_bytes
+        );
+        let _ = state.app_handle.emit(
+            "transfer-progress",
+            ProgressPayload {
+                transfer_id: transfer_id.clone(),
+                current_bytes,
+                total_bytes: Some(current_bytes),
+            },
+        );
+
+        // Then emit completion
+        let complete_payload = json!({
+            "transfer_id": transfer_id.clone(),
+            "file_name": sanitized_name.clone()
+        });
+        eprintln!("Emitting file-receive-complete: {:?}", complete_payload);
+        if let Err(e) = state
+            .app_handle
+            .emit("file-receive-complete", complete_payload)
+        {
+            eprintln!("Failed to emit file-receive-complete: {}", e);
+        }
+
+        // Reset file_size for next field
+        file_size = None;
     }
 }
 

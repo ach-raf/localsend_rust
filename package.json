@@ -24,7 +24,8 @@
     "postcss-simple-vars": "^7.0.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.10.1"
+    "react-router-dom": "^7.10.1",
+    "tauri-plugin-android-fs-api": "^23.0.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

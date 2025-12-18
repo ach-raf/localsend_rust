@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Container,
   Title,
+  Text,
   TextInput,
   NumberInput,
   Button,
@@ -81,42 +82,125 @@ export default function Settings() {
   };
 
   return (
-    <Container size="sm">
-      <Paper shadow="xs" p="xl" withBorder>
-        <Title order={2} mb="lg">
-          Settings
-        </Title>
-        <Stack>
-          <div>
+    <Container
+      size="100%"
+      px={{ base: "sm", sm: "md", lg: "xl" }}
+      className="animate-fade-in"
+    >
+      <Paper
+        shadow="lg"
+        p={{ base: "md", sm: "lg", md: "xl" }}
+        withBorder
+        style={{
+          background:
+            "linear-gradient(135deg, var(--bg) 0%, var(--bg-dark) 100%)",
+          maxWidth: "800px",
+          margin: "0 auto",
+        }}
+      >
+        <div style={{ marginBottom: "clamp(1rem, 4vw, 2rem)" }}>
+          <Text size="sm" c="dimmed" tt="uppercase" fw={600} mb={4}>
+            Configuration
+          </Text>
+          <Title
+            order={2}
+            className="responsive-title"
+            style={{
+              background:
+                "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}
+          >
+            Settings
+          </Title>
+        </div>
+
+        <Stack gap="xl" className="responsive-settings-stack">
+          <div className="depth-card responsive-settings-card">
+            <Text size="md" fw={600} mb="xs" c="dimmed" tt="uppercase">
+              Device Identity
+            </Text>
             <TextInput
               label="Alias"
-              description="Your name visible to others"
+              description="Your name visible to other devices on the network"
               value={config.alias}
               onChange={(event) =>
                 setConfig({ ...config, alias: event.currentTarget.value })
               }
+              size="md"
+              styles={{
+                label: {
+                  fontWeight: 600,
+                  fontSize: "1.15rem",
+                  marginBottom: "0.5rem",
+                },
+                description: {
+                  fontSize: "1.05rem",
+                  marginTop: "0.5rem",
+                },
+                input: {
+                  fontSize: "1.1rem",
+                },
+              }}
             />
-            <Group mt="xs">
+            <Group mt="md">
               <Button
                 variant="light"
-                size="xs"
+                size="sm"
                 onClick={handleRandomize}
                 leftSection={<IconDice size={16} />}
+                style={{
+                  backgroundColor: "var(--bg-light)",
+                  border: "1px solid var(--border-subtle)",
+                }}
               >
-                Randomize Name
+                Generate Random Name
               </Button>
             </Group>
           </div>
-          <NumberInput
-            label="Port"
-            description="Port to listen on (requires restart)"
-            value={config.port}
-            onChange={(val) => setConfig({ ...config, port: Number(val) })}
-            allowNegative={false}
-            min={1024}
-            max={65535}
-          />
-          <Button loading={loading} onClick={handleSave}>
+
+          <div className="depth-card responsive-settings-card">
+            <Text size="md" fw={600} mb="xs" c="dimmed" tt="uppercase">
+              Network Configuration
+            </Text>
+            <NumberInput
+              label="Port"
+              description="Network port to listen on (requires app restart to take effect)"
+              value={config.port}
+              onChange={(val) => setConfig({ ...config, port: Number(val) })}
+              allowNegative={false}
+              min={1024}
+              max={65535}
+              size="md"
+              styles={{
+                label: {
+                  fontWeight: 600,
+                  fontSize: "1rem",
+                  marginBottom: "0.5rem",
+                },
+                description: {
+                  fontSize: "0.875rem",
+                  marginTop: "0.5rem",
+                  color: "var(--accent-warning)",
+                },
+              }}
+            />
+          </div>
+
+          <Button
+            loading={loading}
+            onClick={handleSave}
+            size="lg"
+            className="premium-button responsive-button"
+            fullWidth
+            style={{
+              height: "clamp(52px, 10vw, 60px)",
+              fontSize: "clamp(1.15rem, 2.5vw, 1.25rem)",
+              marginTop: "clamp(0.5rem, 2vw, 1rem)",
+            }}
+          >
             Save Settings
           </Button>
         </Stack>
