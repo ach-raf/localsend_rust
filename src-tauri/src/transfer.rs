@@ -9,6 +9,29 @@ use tauri::{AppHandle, Emitter};
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
+/// Detects if a file is an APK and returns the correct MIME type
+/// APK files are ZIP archives, so we need to check for APK-specific content
+fn get_mime_type_for_file(file_name: &str, file_data: Option<&[u8]>) -> String {
+    // Check by extension first (fastest)
+    if file_name.to_lowercase().ends_with(".apk") {
+        return "application/vnd.android.package-archive".to_string();
+    }
+
+    // If we have file data, check for APK signature
+    if let Some(data) = file_data {
+        if data.len() > 30 && data.starts_with(&[0x50, 0x4B, 0x03, 0x04]) {
+            // ZIP signature found, check for AndroidManifest
+            let preview = &data[..data.len().min(8192)];
+            if String::from_utf8_lossy(preview).contains("AndroidManifest") {
+                return "application/vnd.android.package-archive".to_string();
+            }
+        }
+    }
+
+    // Default to octet-stream
+    "application/octet-stream".to_string()
+}
+
 #[derive(Serialize, Clone)]
 struct ProgressPayload {
     transfer_id: String,
@@ -88,9 +111,12 @@ pub async fn send_file(
 
     let body = Body::wrap_stream(progress_stream);
 
+    // Determine MIME type based on filename
+    let mime_type = get_mime_type_for_file(&file_name, None);
+
     let part = multipart::Part::stream(body)
         .file_name(file_name.clone())
-        .mime_str("application/octet-stream")
+        .mime_str(&mime_type)
         .map_err(|e| e.to_string())?;
 
     let form = multipart::Form::new()
@@ -149,9 +175,12 @@ pub async fn send_file_bytes(
 
     let file_size = file_data.len() as u64;
 
+    // Determine MIME type based on filename and content
+    let mime_type = get_mime_type_for_file(&file_name, Some(&file_data));
+
     let part = multipart::Part::bytes(file_data)
         .file_name(file_name.clone())
-        .mime_str("application/octet-stream")
+        .mime_str(&mime_type)
         .map_err(|e| e.to_string())?;
 
     let form = multipart::Form::new()

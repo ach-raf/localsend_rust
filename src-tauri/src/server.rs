@@ -291,8 +291,33 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
             // On Android, use the Android FS plugin to write to Downloads via MediaStore
             eprintln!("Using Android MediaStore to save file: {}", sanitized_name);
 
-            let mime_type = if let Some(kind) = infer::get(&file_data) {
-                Some(kind.mime_type().to_string())
+            // Determine MIME type - prioritize APK detection over generic ZIP detection
+            let mime_type = if sanitized_name.to_lowercase().ends_with(".apk") {
+                Some("application/vnd.android.package-archive".to_string())
+            } else if file_data.len() > 30
+                && file_data.starts_with(&[0x50, 0x4B, 0x03, 0x04])
+                && String::from_utf8_lossy(&file_data[..file_data.len().min(8192)])
+                    .contains("AndroidManifest")
+            {
+                // Detected APK by content signature
+                eprintln!("Detected APK file by content signature");
+                Some("application/vnd.android.package-archive".to_string())
+            } else if let Some(kind) = infer::get(&file_data) {
+                let detected_mime = kind.mime_type();
+                // If infer detected ZIP but it might be an APK, check more carefully
+                if detected_mime == "application/zip" {
+                    // Check if it's actually an APK
+                    if String::from_utf8_lossy(&file_data[..file_data.len().min(8192)])
+                        .contains("AndroidManifest")
+                    {
+                        eprintln!("Detected APK file (was misidentified as ZIP)");
+                        Some("application/vnd.android.package-archive".to_string())
+                    } else {
+                        Some(detected_mime.to_string())
+                    }
+                } else {
+                    Some(detected_mime.to_string())
+                }
             } else {
                 None
             };
