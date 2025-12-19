@@ -322,32 +322,24 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
                 None
             };
 
-            let app_clone = state.app_handle.clone();
-            let data_clone = file_data.clone();
-            let name_clone = sanitized_name.clone();
-
-            match tokio::task::spawn_blocking(move || {
-                let api = app_clone.android_fs();
-                api.public_storage().write_new(
+            // Use async API directly
+            let api = state.app_handle.android_fs_async();
+            match api
+                .public_storage()
+                .write_new(
                     None, // Use primary storage
                     PublicGeneralPurposeDir::Download,
-                    &name_clone,
+                    &sanitized_name,
                     mime_type.as_deref(),
-                    &data_clone,
+                    &file_data,
                 )
-            })
-            .await
+                .await
             {
-                Ok(Ok(_)) => {
+                Ok(_) => {
                     eprintln!("File saved successfully via MediaStore: {}", sanitized_name);
                 }
-                Ok(Err(e)) => {
-                    eprintln!("Failed to save file via MediaStore: {}", e);
-                    let _ = state.app_handle.emit("file-receive-error", &sanitized_name);
-                    continue;
-                }
                 Err(e) => {
-                    eprintln!("Failed to spawn blocking task: {}", e);
+                    eprintln!("Failed to save file via MediaStore: {}", e);
                     let _ = state.app_handle.emit("file-receive-error", &sanitized_name);
                     continue;
                 }

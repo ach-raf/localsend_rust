@@ -29,6 +29,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
+import { AndroidFs, isAndroid } from "tauri-plugin-android-fs-api";
 import TextMessageModal from "../components/TextMessageModal";
 import FileTransferConfirmModal from "../components/FileTransferConfirmModal";
 
@@ -256,22 +257,36 @@ export default function Home() {
               // On Android content URIs, try to get better filename
               if (filePath.startsWith("content://")) {
                 try {
-                  const properName = await invoke<string>("get_file_name", {
-                    filePath,
-                  });
-                  fileName = properName;
+                  // Try Android FS API first
+                  if (isAndroid()) {
+                    try {
+                      fileName = await AndroidFs.getName(filePath);
+                    } catch {
+                      // Fallback to backend
+                      fileName = await invoke<string>("get_file_name", {
+                        filePath,
+                      });
+                    }
+                  } else {
+                    fileName = await invoke<string>("get_file_name", {
+                      filePath,
+                    });
+                  }
                 } catch (e) {
                   console.warn(
                     "Could not get proper filename from content URI:",
                     e
                   );
+                  // Use a fallback name
+                  const uriParts = filePath.split("/");
+                  const lastPart = uriParts[uriParts.length - 1] || "";
+                  fileName = lastPart.split("?")[0] || "file";
                 }
               }
 
               console.log(`Attempting to send file: ${fileName} (${filePath})`);
 
-              // On desktop platforms, use direct path method
-              // On mobile, would need the bytes method
+              // Pass file path/URI directly to backend - it handles both content URIs and regular paths
               await invoke("send_file_to_peer", {
                 peerIp: currentPeer.ip,
                 peerPort: currentPeer.port,
@@ -286,11 +301,24 @@ export default function Home() {
                 color: "green",
               });
             } catch (e) {
-              const fileName = filePath.split(/[\\/]/).pop() || filePath;
-              console.error(`Failed to send ${fileName}:`, e);
+              // Extract filename safely for error message
+              let errorFileName: string = "file";
+              if (typeof filePath === "string") {
+                if (filePath.startsWith("content://")) {
+                  const uriParts = filePath.split("/");
+                  const lastPart = uriParts[uriParts.length - 1] || "";
+                  errorFileName = lastPart.split("?")[0] || "file";
+                } else {
+                  errorFileName = filePath.split(/[\\/]/).pop() || filePath;
+                }
+              }
+
+              const errorMsg =
+                typeof e === "string" ? e : e?.toString() || String(e);
+              console.error(`Failed to send ${errorFileName}:`, e);
               notifications.show({
                 title: "Error",
-                message: `Failed to send ${fileName}: ${e}`,
+                message: `Failed to send ${errorFileName}: ${errorMsg}`,
                 color: "red",
               });
             }
@@ -335,18 +363,82 @@ export default function Home() {
     }
 
     try {
-      // Open file dialog and get file paths
-      const selected = await open({
-        multiple: true,
-        directory: false,
-      });
+      let filePaths: string[] = [];
 
-      if (!selected) {
-        return; // User cancelled
+      // Use Android FS API on Android, dialog plugin on other platforms
+      if (isAndroid()) {
+        try {
+          const uris = await AndroidFs.showOpenFilePicker({
+            multiple: true,
+            mimeTypes: ["*/*"],
+          });
+          // Convert AndroidFsUri[] to string[] - properly convert URI objects to strings
+          filePaths = (uris || []).map((uri) => {
+            // The API returns URI objects - check various possible structures
+            if (typeof uri === "string") {
+              return uri;
+            }
+            // Try accessing the uri property directly (common structure)
+            if (uri && typeof uri === "object") {
+              // Check for common property names
+              if ("uri" in uri && typeof uri.uri === "string") {
+                return uri.uri;
+              }
+              // Check if it has a toString method
+              if (typeof uri.toString === "function") {
+                const str = uri.toString();
+                // Only use toString if it returns a valid URI string
+                if (str && str.startsWith("content://")) {
+                  return str;
+                }
+              }
+              // Try JSON stringify and parse to extract URI
+              try {
+                const jsonStr = JSON.stringify(uri);
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.uri && typeof parsed.uri === "string") {
+                  return parsed.uri;
+                }
+              } catch {}
+            }
+            // Last resort: try String conversion
+            const str = String(uri);
+            if (str && str.startsWith("content://")) {
+              return str;
+            }
+            // If all else fails, log and throw
+            console.error("Failed to extract URI from:", uri);
+            throw new Error(`Invalid URI object: ${JSON.stringify(uri)}`);
+          });
+
+          if (filePaths.length === 0) {
+            return; // User cancelled or no files selected
+          }
+
+          console.log("Selected file URIs:", filePaths);
+        } catch (e) {
+          console.error("Failed to open file picker on Android:", e);
+          notifications.show({
+            title: "Error",
+            message: `Failed to open file picker: ${e}`,
+            color: "red",
+          });
+          return;
+        }
+      } else {
+        // Use dialog plugin on desktop
+        const selected = await open({
+          multiple: true,
+          directory: false,
+        });
+
+        if (!selected) {
+          return; // User cancelled
+        }
+
+        // Convert to array if single file selected
+        filePaths = Array.isArray(selected) ? selected : [selected];
       }
-
-      // Convert to array if single file selected
-      const filePaths = Array.isArray(selected) ? selected : [selected];
 
       setSending(true);
       for (const filePath of filePaths) {
@@ -354,64 +446,98 @@ export default function Home() {
           // Extract filename from path - handle both regular paths and content URIs
           let fileName = filePath.split(/[\\/]/).pop() || filePath;
 
-          // On Android content URIs, try to get better filename
+          // On Android content URIs, get filename using Android FS API or backend
           if (filePath.startsWith("content://")) {
             try {
-              // Try to get proper filename from backend
-              const properName = await invoke<string>("get_file_name", {
-                filePath,
-              });
-              fileName = properName;
+              // Try Android FS API first
+              fileName = await AndroidFs.getName(filePath);
+              console.log("Got filename from Android FS API:", fileName);
             } catch (e) {
               console.warn(
-                "Could not get proper filename from content URI:",
+                "Could not get filename from Android FS API, trying backend:",
                 e
               );
-              // Keep the extracted name as fallback
+              // Fallback to backend
+              try {
+                fileName = await invoke<string>("get_file_name", {
+                  filePath,
+                });
+                console.log("Got filename from backend:", fileName);
+              } catch (backendError) {
+                console.warn(
+                  "Could not get filename from backend:",
+                  backendError
+                );
+                // Use a generic name as last resort
+                fileName = "file";
+              }
             }
           }
 
+          // Use a safe identifier for notifications (avoid [object Object])
+          const notificationId = fileName || `file-${Date.now()}`;
+
           notifications.show({
-            id: fileName,
+            id: notificationId,
             title: `Sending ${fileName}`,
             message: "Starting...",
             loading: true,
             autoClose: false,
           });
 
-          // Try direct path method first (Desktop optimization)
-          try {
-            await invoke("send_file_to_peer", {
-              peerIp: selectedPeer.ip,
-              peerPort: selectedPeer.port,
-              filePath: filePath,
-            });
-          } catch (pathError) {
-            // Fall back to reading file bytes (for mobile/content URIs)
+          // On Android with content URIs, pass URI directly to Rust backend
+          // The Rust backend already handles content URIs properly using Android FS API
+          if (isAndroid() && filePath.startsWith("content://")) {
             try {
-              console.log(
-                "Path method failed, trying bytes method with filename:",
-                fileName
-              );
-              // Try to read the file as bytes using the fs plugin
-              const fileData = await readFile(filePath);
-
-              // Send as bytes with the extracted/corrected filename
-              await invoke("send_file_bytes_to_peer", {
+              console.log("Sending Android content URI to backend:", filePath);
+              // Pass the content URI directly to the Rust backend
+              // The backend will handle opening the file using Android FS API
+              await invoke("send_file_to_peer", {
                 peerIp: selectedPeer.ip,
                 peerPort: selectedPeer.port,
-                fileName: fileName,
-                fileData: Array.from(fileData),
+                filePath: filePath,
               });
-            } catch (readError) {
-              throw new Error(
-                `Failed to send via path or bytes: ${pathError} / ${readError}`
-              );
+              console.log("File sent successfully via content URI");
+            } catch (sendError) {
+              console.error("Failed to send file via content URI:", sendError);
+              throw new Error(`Failed to send file: ${sendError}`);
+            }
+          } else {
+            // Desktop or regular file paths
+            try {
+              // Try direct path method first (Desktop optimization)
+              await invoke("send_file_to_peer", {
+                peerIp: selectedPeer.ip,
+                peerPort: selectedPeer.port,
+                filePath: filePath,
+              });
+            } catch (pathError) {
+              // Fall back to reading file bytes
+              try {
+                console.log(
+                  "Path method failed, trying bytes method with filename:",
+                  fileName
+                );
+                // Try to read the file as bytes using the fs plugin
+                const fileData = await readFile(filePath);
+
+                // Send as bytes with the extracted/corrected filename
+                await invoke("send_file_bytes_to_peer", {
+                  peerIp: selectedPeer.ip,
+                  peerPort: selectedPeer.port,
+                  fileName: fileName,
+                  fileData: Array.from(fileData),
+                });
+              } catch (readError) {
+                throw new Error(
+                  `Failed to send via path or bytes: ${pathError} / ${readError}`
+                );
+              }
             }
           }
 
           notifications.update({
-            id: fileName,
+            id: notificationId,
             title: "Sent",
             message: `Successfully sent ${fileName}`,
             color: "green",
@@ -419,12 +545,33 @@ export default function Home() {
             autoClose: 2000,
           });
         } catch (e) {
-          const fileName = filePath.split(/[\\/]/).pop() || filePath;
+          // Extract filename safely for error message (synchronous only)
+          let errorFileName: string = "file";
+          if (typeof filePath === "string") {
+            if (filePath.startsWith("content://")) {
+              // For content URIs, use a generic name or try to extract from URI
+              // We can't use async operations here, so use a fallback
+              const uriParts = filePath.split("/");
+              const lastPart = uriParts[uriParts.length - 1] || "";
+              // Remove query parameters
+              const cleanPart = lastPart.split("?")[0];
+              errorFileName = cleanPart || "file";
+            } else {
+              errorFileName = filePath.split(/[\\/]/).pop() || filePath;
+            }
+          }
+
+          // Ensure we have a string, not an object
+          const errorMsg =
+            typeof e === "string" ? e : e?.toString() || String(e);
+
           notifications.show({
             title: "Error",
-            message: `Failed to send ${fileName}: ${e}`,
+            message: `Failed to send ${errorFileName}: ${errorMsg}`,
             color: "red",
+            autoClose: 5000,
           });
+          console.error(`Failed to send ${errorFileName}:`, e);
         }
       }
     } catch (e) {
