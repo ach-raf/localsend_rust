@@ -177,14 +177,22 @@ fn generate_random_name() -> String {
 }
 
 #[tauri::command]
-fn scan_media_file(app: AppHandle, path: String) -> Result<(), String> {
+async fn scan_media_file(app: AppHandle, path: String) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        // On Android, call the Kotlin plugin through Tauri's plugin system
-        // The MediaScannerPlugin will handle the actual media scanning
-        use tauri::Emitter;
-        app.emit("scan-media-file", path)
-            .map_err(|e| e.to_string())?;
+        use tauri_plugin_android_fs::{AndroidFsExt, FileUri};
+        use tauri_plugin_fs::FilePath;
+
+        // Use the Android FS plugin to scan the file
+        let api = app.android_fs_async();
+        let url =
+            url::Url::parse(&path).map_err(|e| format!("Failed to parse content URI: {}", e))?;
+        let fs_path = FilePath::Url(url);
+        let uri: FileUri = fs_path.into();
+        api.public_storage()
+            .scan(&uri)
+            .await
+            .map_err(|e| format!("Failed to scan media file: {}", e))?;
     }
 
     #[cfg(not(target_os = "android"))]
@@ -220,47 +228,39 @@ fn respond_to_file_transfer(
 }
 
 #[tauri::command]
-async fn get_file_name(_app: AppHandle, file_path: String) -> Result<String, String> {
+async fn get_file_name(app: AppHandle, file_path: String) -> Result<String, String> {
     // Handle Android content URIs like content://.../msf:1000285299
     // or content://.../document/12345
     if file_path.starts_with("content://") {
         #[cfg(target_os = "android")]
         {
-            // On Android, try to resolve the display name from content URI
-            // We'll use the fs plugin's metadata if available, or return a fallback
-            // For now, return a generic name that indicates the file picker didn't provide proper metadata
-            use urlencoding::decode;
+            use tauri_plugin_android_fs::{AndroidFsExt, FileUri};
+            use tauri_plugin_fs::FilePath;
 
-            // Try to decode the URI in case it has encoded filename
-            if let Ok(decoded) = decode(&file_path) {
-                if let Some(last_segment) = decoded.split('/').last() {
-                    // Check if it looks like a filename (has extension)
-                    if last_segment.contains('.') && !last_segment.contains(':') {
-                        return Ok(last_segment.to_string());
+            // Use the Android FS plugin to get the file name from the URI
+            let api = app.android_fs_async();
+            let url = url::Url::parse(&file_path)
+                .map_err(|e| format!("Failed to parse content URI: {}", e))?;
+            let fs_path = FilePath::Url(url);
+            let uri: FileUri = fs_path.into();
+            return match api.get_name(&uri).await {
+                Ok(name) => Ok(name),
+                Err(e) => {
+                    eprintln!("Failed to get name from Android FS API: {}", e);
+                    // Fallback: try to extract from URI
+                    if let Some(last_segment) = file_path.split('/').last() {
+                        // Remove any query parameters or fragments
+                        let clean_segment = last_segment.split('?').next().unwrap_or(last_segment);
+                        if clean_segment.contains('.') && !clean_segment.contains(':') {
+                            Ok(clean_segment.to_string())
+                        } else {
+                            Err(format!("Failed to get filename from URI: {}", e))
+                        }
+                    } else {
+                        Err(format!("Failed to get filename from URI: {}", e))
                     }
                 }
-            }
-
-            // If we can't get a proper name, try to read file metadata using Tauri's path API
-            // This is a fallback - the real fix should be in the file picker
-            match _app
-                .path()
-                .resolve(&file_path, tauri::path::BaseDirectory::AppData)
-            {
-                Ok(resolved_path) => {
-                    if let Some(file_name) = resolved_path.file_name() {
-                        return Ok(file_name.to_string_lossy().to_string());
-                    }
-                }
-                Err(_) => {
-                    // Can't resolve, return error
-                }
-            }
-
-            return Err(format!(
-                "Android content URI does not contain filename: {}",
-                file_path
-            ));
+            };
         }
 
         #[cfg(not(target_os = "android"))]
@@ -286,6 +286,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_upload::init())
+        .plugin(tauri_plugin_http::init())
         .setup(|app| {
             let config = load_config(app.handle());
             let port = config.port;

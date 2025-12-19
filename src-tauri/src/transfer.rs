@@ -1,13 +1,17 @@
 use futures::stream::StreamExt;
-use reqwest::{multipart, Body, Client};
 use serde::Serialize;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_http::reqwest::{multipart, Body, Client};
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
+
+#[cfg(target_os = "android")]
+use tauri_plugin_android_fs::{AndroidFsExt, FileUri};
+use tauri_plugin_fs::FilePath;
 
 /// Detects if a file is an APK and returns the correct MIME type
 /// APK files are ZIP archives, so we need to check for APK-specific content
@@ -58,26 +62,99 @@ pub async fn send_file(
     let url = format!("http://{}:{}/upload", peer_ip, peer_port);
     eprintln!("Upload URL: {}", url);
 
-    let path = PathBuf::from(&file_path);
-    eprintln!("Opening file: {:?}", path);
+    let (file_name, file_size, stream) = {
+        // Handle Android content URIs differently
+        #[cfg(target_os = "android")]
+        if file_path.starts_with("content://") {
+            let api = app.android_fs_async();
 
-    let file_name = path
-        .file_name()
-        .ok_or("Invalid file name")?
-        .to_string_lossy()
-        .to_string();
-    eprintln!("File name: {}", file_name);
+            // Convert String content URI to FileUri via FilePath
+            let url = url::Url::parse(&file_path)
+                .map_err(|e| format!("Failed to parse content URI: {}", e))?;
+            let fs_path = FilePath::Url(url);
+            let uri: FileUri = fs_path.into();
 
-    let file = File::open(&path).await.map_err(|e| {
-        eprintln!("Failed to open file: {}", e);
-        format!("Failed to open file: {}", e)
-    })?;
+            // Get file name from Android FS API
+            let name = api
+                .get_name(&uri)
+                .await
+                .map_err(|e| format!("Failed to get file name: {}", e))?;
+            eprintln!("File name from Android FS: {}", name);
 
-    let file_size = file.metadata().await.map_err(|e| e.to_string())?.len();
-    eprintln!("File size: {}", file_size);
+            // Get file size using metadata
+            let metadata = api
+                .get_metadata(&uri)
+                .await
+                .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+            let size = metadata.len();
+            eprintln!("File size: {}", size);
 
-    // Create a stream from the file
-    let stream = FramedRead::new(file, BytesCodec::new());
+            // Open file for reading using Android FS API (returns std::fs::File)
+            let std_file = api
+                .open_file_readable(&uri)
+                .await
+                .map_err(|e| format!("Failed to open file: {}", e))?;
+
+            // Convert std::fs::File to tokio::fs::File for async operations
+            let tokio_file = tokio::fs::File::from_std(std_file);
+
+            // Create a stream from the file
+            let stream = FramedRead::new(tokio_file, BytesCodec::new());
+
+            (name, size, stream)
+        } else {
+            // Regular file path on Android
+            let path = PathBuf::from(&file_path);
+            eprintln!("Opening file: {:?}", path);
+
+            let name = path
+                .file_name()
+                .ok_or("Invalid file name")?
+                .to_string_lossy()
+                .to_string();
+            eprintln!("File name: {}", name);
+
+            let file = File::open(&path).await.map_err(|e| {
+                eprintln!("Failed to open file: {}", e);
+                format!("Failed to open file: {}", e)
+            })?;
+
+            let size = file.metadata().await.map_err(|e| e.to_string())?.len();
+            eprintln!("File size: {}", size);
+
+            // Create a stream from the file
+            let stream = FramedRead::new(file, BytesCodec::new());
+
+            (name, size, stream)
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            // Regular file path for non-Android platforms
+            let path = PathBuf::from(&file_path);
+            eprintln!("Opening file: {:?}", path);
+
+            let name = path
+                .file_name()
+                .ok_or("Invalid file name")?
+                .to_string_lossy()
+                .to_string();
+            eprintln!("File name: {}", name);
+
+            let file = File::open(&path).await.map_err(|e| {
+                eprintln!("Failed to open file: {}", e);
+                format!("Failed to open file: {}", e)
+            })?;
+
+            let size = file.metadata().await.map_err(|e| e.to_string())?.len();
+            eprintln!("File size: {}", size);
+
+            // Create a stream from the file
+            let stream = FramedRead::new(file, BytesCodec::new());
+
+            (name, size, stream)
+        }
+    };
 
     // Progress tracking
     let uploaded = Arc::new(Mutex::new(0u64));
@@ -87,7 +164,7 @@ pub async fn send_file(
     let transfer_id = file_name.clone(); // Use filename as ID for sender tracking
 
     let progress_stream = stream.map(move |chunk| {
-        if let Ok(bytes) = &chunk {
+        if let Ok(ref bytes) = chunk {
             let len = bytes.len() as u64;
             let mut uploaded_val = uploaded_clone.lock().unwrap();
             *uploaded_val += len;
