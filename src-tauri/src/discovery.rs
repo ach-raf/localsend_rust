@@ -59,8 +59,12 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
                 // Shutdown old daemon if exists
                 if let Some(old_daemon) = daemon_opt.take() {
                     let _ = old_daemon.shutdown();
-                    thread::sleep(Duration::from_millis(200));
+                    // Wait a bit longer to allow mDNS cache to clear
+                    thread::sleep(Duration::from_millis(500));
                 }
+
+                // Reset the restart flag
+                should_restart = false;
 
                 // Create new daemon
                 match ServiceDaemon::new() {
@@ -76,6 +80,9 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
                                     match cmd_receiver.try_recv() {
                                         Ok(DiscoveryCommand::Refresh) => {
                                             eprintln!("Refresh command received!");
+                                            // Clear peers map to force fresh discovery
+                                            peers_map_clone.lock().unwrap().clear();
+                                            emit_peers(&app, &peers_map_clone);
                                             should_restart = true;
                                             break;
                                         }
@@ -196,8 +203,26 @@ fn process_mdns_event(
                     hostname: hostname.clone(),
                 };
 
-                eprintln!("  Adding peer: {} ({}:{})", alias, ip, port);
-                peers_map.lock().unwrap().insert(key, peer);
+                let mut peers = peers_map.lock().unwrap();
+
+                // Check if we already have a peer with the same IP but different alias
+                // If so, remove the old entry to avoid duplicates
+                let existing_key = peers
+                    .iter()
+                    .find(|(_, p)| p.ip == ip && p.alias != alias)
+                    .map(|(k, _)| k.clone());
+
+                if let Some(old_key) = existing_key {
+                    eprintln!(
+                        "  Removing old peer entry with same IP but different alias: {}",
+                        old_key
+                    );
+                    peers.remove(&old_key);
+                }
+
+                eprintln!("  Adding/updating peer: {} ({}:{})", alias, ip, port);
+                peers.insert(key, peer);
+                drop(peers); // Release lock before emitting
                 emit_peers(app, peers_map);
             } else {
                 eprintln!("  Skipping - no valid IP found");

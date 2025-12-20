@@ -912,7 +912,11 @@ export default function Home() {
                 </Group>
 
                 <Tabs defaultValue="files">
-                  <Tabs.List mb="lg" className="responsive-tabs-list">
+                  <Tabs.List
+                    mb="lg"
+                    className="responsive-tabs-list"
+                    style={{ gap: "0.5rem" }}
+                  >
                     <Tabs.Tab
                       value="files"
                       leftSection={
@@ -936,6 +940,7 @@ export default function Home() {
                   <Tabs.Panel value="files">
                     <div
                       className="depth-inset upload-area"
+                      onClick={handleSelectFiles}
                       style={{
                         display: "flex",
                         flexDirection: "column",
@@ -943,6 +948,17 @@ export default function Home() {
                         justifyContent: "center",
                         gap: "1rem",
                         padding: "clamp(1rem, 3vw, 2rem)",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "scale(1.01)";
+                        e.currentTarget.style.boxShadow =
+                          "var(--shadow-l), var(--glow-primary)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "scale(1)";
+                        e.currentTarget.style.boxShadow = "";
                       }}
                     >
                       <div
@@ -978,12 +994,16 @@ export default function Home() {
                           Send files to {selectedPeer.alias}
                         </Text>
                         <Text c="dimmed" className="responsive-upload-subtitle">
-                          Drag & drop files here or click the button below
+                          Drag & drop files here or click anywhere to select
+                          files
                         </Text>
                       </div>
                       <Button
                         leftSection={<IconFile size={18} />}
-                        onClick={handleSelectFiles}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectFiles();
+                        }}
                         loading={sending}
                         size="lg"
                         className="premium-button responsive-button"
