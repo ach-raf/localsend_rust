@@ -65,6 +65,7 @@ export default function FileTransferConfirmModal({
       closeOnClickOutside={false}
       closeOnEscape={false}
       withCloseButton={false}
+      size="auto"
       overlayProps={{
         backgroundOpacity: 0.75,
         blur: 10,
@@ -73,85 +74,93 @@ export default function FileTransferConfirmModal({
         header: {
           background: "linear-gradient(to bottom, var(--bg-light), var(--bg))",
           borderBottom: "1px solid var(--border-subtle)",
-          padding: "1.5rem",
+          padding: "clamp(1rem, 4vw, 1.5rem)",
         },
         content: {
           backgroundColor: "var(--bg)",
           border: "2px solid var(--accent-primary)",
           boxShadow: "var(--shadow-l), var(--glow-primary)",
+          maxWidth: "min(90vw, 500px)",
         },
         body: {
-          padding: "1.5rem",
+          padding: "clamp(1rem, 4vw, 1.5rem)",
         },
       }}
     >
       <Stack gap="xl">
+        {/* Icon and question - centered on mobile */}
+        <Stack gap="md" align="center">
+          <div
+            style={{
+              background:
+                "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
+              borderRadius: "20px",
+              padding: "clamp(1.25rem, 5vw, 1.5rem)",
+              boxShadow: "var(--shadow-m), var(--glow-primary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <IconFileDownload size={48} color="white" stroke={2.5} />
+          </div>
+          <Text
+            size="clamp(1.1rem, 4vw, 1.25rem)"
+            fw={600}
+            ta="center"
+            style={{ lineHeight: "1.4" }}
+          >
+            Do you want to accept this file?
+          </Text>
+        </Stack>
+
+        {/* File information - prominent display */}
         <div
-          className="depth-card"
           style={{
-            padding: "1.5rem",
-            background: "linear-gradient(135deg, var(--bg-light), var(--bg))",
+            padding: "clamp(1rem, 4vw, 1.25rem)",
+            backgroundColor: "var(--bg-dark)",
+            borderRadius: "12px",
+            border: "1px solid var(--border-subtle)",
           }}
         >
-          <Group gap="lg" wrap="nowrap" align="flex-start">
-            <div
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
-                borderRadius: "16px",
-                padding: "1rem",
-                boxShadow: "var(--shadow-m), var(--glow-primary)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <IconFileDownload size={40} color="white" stroke={2} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text size="1.25rem" fw={600} mb="xs">
-                Do you want to accept this file?
-              </Text>
-              <div
+          <Stack gap="sm">
+            <Group gap="sm" align="flex-start" wrap="nowrap">
+              <IconFile
+                size={24}
+                color="var(--accent-primary-light)"
+                style={{ flexShrink: 0, marginTop: "2px" }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Text
+                  size="clamp(1rem, 4vw, 1.1rem)"
+                  fw={600}
+                  style={{
+                    color: "var(--text-primary)",
+                    wordBreak: "break-word",
+                    overflowWrap: "break-word",
+                    lineHeight: "1.5",
+                  }}
+                >
+                  {fileName}
+                </Text>
+              </div>
+            </Group>
+            {fileSize !== undefined && (
+              <Text
+                size="clamp(0.9rem, 3.5vw, 1rem)"
+                c="dimmed"
                 style={{
-                  padding: "0.75rem",
-                  backgroundColor: "var(--bg-dark)",
-                  borderRadius: "8px",
-                  border: "1px solid var(--border-subtle)",
-                  marginTop: "0.5rem",
+                  fontFamily: "monospace",
+                  marginLeft: "32px",
                 }}
               >
-                <Group gap="xs" wrap="nowrap">
-                  <IconFile size={20} color="var(--accent-primary-light)" />
-                  <Text
-                    size="1.1rem"
-                    fw={500}
-                    style={{
-                      color: "var(--text-primary)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {fileName}
-                  </Text>
-                </Group>
-                {fileSize !== undefined && (
-                  <Text
-                    size="1rem"
-                    c="dimmed"
-                    mt="xs"
-                    style={{ fontFamily: "monospace" }}
-                  >
-                    Size: {formatFileSize(fileSize)}
-                  </Text>
-                )}
-              </div>
-            </div>
-          </Group>
+                Size: {formatFileSize(fileSize)}
+              </Text>
+            )}
+          </Stack>
         </div>
 
+        {/* Action buttons */}
         <Stack gap="sm">
           <Button
             onClick={handleAccept}
@@ -164,8 +173,8 @@ export default function FileTransferConfirmModal({
               boxShadow: "var(--shadow-s), var(--glow-success)",
               color: "white",
               fontWeight: 600,
-              height: "56px",
-              fontSize: "1.15rem",
+              height: "clamp(52px, 12vw, 56px)",
+              fontSize: "clamp(1rem, 4vw, 1.15rem)",
             }}
           >
             Accept Transfer
@@ -179,8 +188,8 @@ export default function FileTransferConfirmModal({
               backgroundColor: "var(--bg-light)",
               border: "1px solid var(--border-subtle)",
               color: "var(--text-secondary)",
-              height: "52px",
-              fontSize: "1.15rem",
+              height: "clamp(48px, 11vw, 52px)",
+              fontSize: "clamp(0.95rem, 3.5vw, 1.15rem)",
             }}
           >
             Reject
