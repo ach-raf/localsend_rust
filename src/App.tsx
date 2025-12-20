@@ -23,7 +23,7 @@ function Layout() {
   const [opened, { toggle }] = useDisclosure();
   const navigate = useNavigate();
   const location = useLocation();
-  const [deviceName, setDeviceName] = useState<string>("LocalSend Rust");
+  const [deviceName, setDeviceName] = useState<string>("LocalShare Rust");
 
   useEffect(() => {
     // Fetch device name from backend
@@ -48,53 +48,44 @@ function Layout() {
 
   return (
     <AppShell
-      header={{ height: { base: 60, sm: 70 } }}
+      header={{ height: { base: 120, sm: 70 } }}
       navbar={{
         width: 280,
         breakpoint: "sm",
         collapsed: { mobile: !opened },
       }}
-      padding={{ base: "md", sm: "md", md: "lg" }}
+      padding={{ base: "xs", sm: "md", md: "lg" }}
     >
-      <AppShell.Header
-        style={{
-          paddingTop: "max(env(safe-area-inset-top, 0px), 8px)",
-          background: "linear-gradient(to bottom, var(--bg-light), var(--bg))",
-          borderBottom: "1px solid var(--border-subtle)",
-          boxShadow: "var(--shadow-m)",
-          backdropFilter: "blur(10px)",
-        }}
-      >
-        <Group h="100%" px="lg" justify="space-between">
-          <Group gap="md">
+      <AppShell.Header className="pt-[max(env(safe-area-inset-top,0px),8px)] pb-3 mb-4 sm:mb-0 bg-gradient-to-b from-bg-light to-bg border-b border-border-subtle shadow-depth-m backdrop-blur-[10px] z-[200] min-h-[80px] sm:min-h-[70px]">
+        <Group
+          h="100%"
+          px={{ base: "md", sm: "lg" }}
+          py={{ base: "xs", sm: 0 }}
+          justify="space-between"
+          align="flex-start"
+        >
+          <Group gap="md" align="flex-start" wrap="nowrap">
             <Burger
               opened={opened}
               onClick={toggle}
               hiddenFrom="sm"
               size="sm"
-              style={{ color: "var(--text-primary)" }}
+              className="text-text-primary mt-1 flex-shrink-0"
             />
-            <div>
+            <div className="flex-1 min-w-0">
               <Text
                 size="sm"
                 c="dimmed"
                 tt="uppercase"
                 fw={600}
-                style={{ letterSpacing: "0.5px", fontSize: "0.9rem" }}
+                className="tracking-[0.5px] text-[0.9rem] leading-tight"
               >
-                LocalSend
+                LocalShare
               </Text>
               <Text
                 size="xl"
                 fw={700}
-                style={{
-                  background:
-                    "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  backgroundClip: "text",
-                  fontSize: "1.35rem",
-                }}
+                className="bg-gradient-to-br from-accent-primary-light to-accent-primary bg-clip-text text-transparent text-[1.35rem] leading-tight break-words"
               >
                 {deviceName}
               </Text>
@@ -103,70 +94,47 @@ function Layout() {
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar
-        p="lg"
-        pb="calc(var(--mantine-spacing-lg) + env(safe-area-inset-bottom, 0px))"
-        style={{
-          backgroundColor: "var(--bg)",
-          borderRight: "1px solid var(--border-subtle)",
-          boxShadow: "var(--shadow-s)",
-        }}
-      >
-        <Stack gap="xs">
-          <Text
-            size="sm"
-            c="dimmed"
-            tt="uppercase"
-            fw={600}
-            mb="xs"
-            px="sm"
-            style={{ fontSize: "0.95rem" }}
-          >
-            Navigation
-          </Text>
-          <NavLink
-            label="Home"
-            leftSection={<IconHome size="1.5rem" stroke={2} />}
-            active={location.pathname === "/"}
-            onClick={() => {
-              navigate("/");
-              toggle();
-            }}
-            styles={{
-              root: {
-                borderRadius: "8px",
-                padding: "1rem 1.25rem",
-                fontWeight: 500,
-                fontSize: "1.15rem",
-              },
-            }}
-          />
-          <NavLink
-            label="Settings"
-            leftSection={<IconSettings size="1.5rem" stroke={2} />}
-            active={location.pathname === "/settings"}
-            onClick={() => {
-              navigate("/settings");
-              toggle();
-            }}
-            styles={{
-              root: {
-                borderRadius: "8px",
-                padding: "1rem 1.25rem",
-                fontWeight: 500,
-                fontSize: "1.15rem",
-              },
-            }}
-          />
-        </Stack>
+      <AppShell.Navbar className="bg-bg border-r border-border-subtle shadow-depth-s">
+        <div className="h-full flex flex-col p-4 sm:p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+          <div className="mb-4 sm:mb-6">
+            <Text
+              size="sm"
+              c="dimmed"
+              tt="uppercase"
+              fw={600}
+              className="text-[0.95rem] px-2 mb-3"
+            >
+              Navigation
+            </Text>
+          </div>
+          <Stack gap="xs" className="flex-1">
+            <NavLink
+              label="Home"
+              leftSection={<IconHome size="1.5rem" stroke={2} />}
+              active={location.pathname === "/"}
+              onClick={() => {
+                navigate("/");
+                toggle();
+              }}
+              className="rounded-lg px-5 py-4 font-medium text-[1.15rem] text-text-secondary transition-all duration-fast hover:bg-bg-light hover:text-text-primary data-[active=true]:bg-gradient-to-r data-[active=true]:from-bg-light data-[active=true]:to-bg data-[active=true]:text-accent-primary-light data-[active=true]:shadow-depth-s data-[active=true]:font-semibold"
+            />
+            <NavLink
+              label="Settings"
+              leftSection={<IconSettings size="1.5rem" stroke={2} />}
+              active={location.pathname === "/settings"}
+              onClick={() => {
+                navigate("/settings");
+                toggle();
+              }}
+              className="rounded-lg px-5 py-4 font-medium text-[1.15rem] text-text-secondary transition-all duration-fast hover:bg-bg-light hover:text-text-primary data-[active=true]:bg-gradient-to-r data-[active=true]:from-bg-light data-[active=true]:to-bg data-[active=true]:text-accent-primary-light data-[active=true]:shadow-depth-s data-[active=true]:font-semibold"
+            />
+          </Stack>
+        </div>
       </AppShell.Navbar>
 
       <AppShell.Main
         pb="env(safe-area-inset-bottom, 0px)"
-        style={{
-          backgroundColor: "var(--bg-darkest)",
-          minHeight: "calc(100vh - 70px)",
-        }}
+        className="bg-bg-darkest min-h-[calc(100vh-70px)]"
       >
         <Routes>
           <Route path="/" element={<Home />} />

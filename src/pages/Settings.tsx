@@ -84,41 +84,30 @@ export default function Settings() {
   return (
     <Container
       size="100%"
-      px={{ base: "sm", sm: "md", lg: "xl" }}
-      className="animate-fade-in"
+      px={{ base: "xs", sm: "md", lg: "xl" }}
+      className="animate-[fadeIn_250ms_ease-out]"
     >
       <Paper
         shadow="lg"
-        p={{ base: "md", sm: "lg", md: "xl" }}
+        p={{ base: "sm", sm: "lg", md: "xl" }}
         withBorder
-        style={{
-          background:
-            "linear-gradient(135deg, var(--bg) 0%, var(--bg-dark) 100%)",
-          maxWidth: "800px",
-          margin: "0 auto",
-        }}
+        className="bg-gradient-to-br from-bg to-bg-dark max-w-[800px] mx-auto border-border-subtle rounded-xl shadow-depth-m transition-all duration-normal hover:-translate-y-[1px] hover:shadow-depth-l"
       >
-        <div style={{ marginBottom: "clamp(1rem, 4vw, 2rem)" }}>
+        {/* Header Section: Added Tailwind margin-bottom (mb-8 md:mb-12) */}
+        <div className="mb-8 md:mb-12">
           <Text size="sm" c="dimmed" tt="uppercase" fw={600} mb={4}>
             Configuration
           </Text>
           <Title
             order={2}
-            className="responsive-title"
-            style={{
-              background:
-                "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
-            }}
+            className="responsive-title bg-gradient-to-br from-accent-primary-light to-accent-primary bg-clip-text text-transparent"
           >
             Settings
           </Title>
         </div>
 
         <Stack gap="xl" className="responsive-settings-stack">
-          <div className="depth-card responsive-settings-card">
+          <div className="bg-bg border border-border-subtle rounded-xl p-6 shadow-depth-m transition-all duration-normal hover:-translate-y-[2px] hover:shadow-depth-l hover:border-border-strong responsive-settings-card">
             <Text size="md" fw={600} mb="xs" c="dimmed" tt="uppercase">
               Device Identity
             </Text>
@@ -148,20 +137,17 @@ export default function Settings() {
             <Group mt="md">
               <Button
                 variant="light"
-                size="sm"
+                size="md"
                 onClick={handleRandomize}
-                leftSection={<IconDice size={16} />}
-                style={{
-                  backgroundColor: "var(--bg-light)",
-                  border: "1px solid var(--border-subtle)",
-                }}
+                leftSection={<IconDice size={20} />}
+                className="w-full sm:w-auto text-sm sm:text-base font-medium transition-all duration-fast bg-bg-light border border-border-subtle rounded-lg shadow-depth-s hover:bg-bg-lighter hover:shadow-depth-m hover:-translate-y-[1px] active:shadow-depth-inset active:translate-y-0"
               >
                 Generate Random Name
               </Button>
             </Group>
           </div>
 
-          <div className="depth-card responsive-settings-card">
+          <div className="bg-bg border border-border-subtle rounded-xl p-6 shadow-depth-m transition-all duration-normal hover:-translate-y-[2px] hover:shadow-depth-l hover:border-border-strong responsive-settings-card">
             <Text size="md" fw={600} mb="xs" c="dimmed" tt="uppercase">
               Network Configuration
             </Text>
@@ -192,14 +178,8 @@ export default function Settings() {
           <Button
             loading={loading}
             onClick={handleSave}
-            size="lg"
-            className="premium-button responsive-button"
+            className="w-full mt-4 h-12 text-base md:h-14 md:text-lg bg-gradient-to-b from-accent-primary-light to-accent-primary border border-accent-primary-dark shadow-depth-s shadow-glow-primary text-white font-semibold transition-all duration-normal hover:-translate-y-[2px] hover:shadow-depth-m hover:shadow-glow-primary"
             fullWidth
-            style={{
-              height: "clamp(52px, 10vw, 60px)",
-              fontSize: "clamp(1.15rem, 2.5vw, 1.25rem)",
-              marginTop: "clamp(0.5rem, 2vw, 1rem)",
-            }}
           >
             Save Settings
           </Button>
