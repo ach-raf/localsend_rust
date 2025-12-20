@@ -680,25 +680,24 @@ export default function Home() {
     <>
       <Container
         size="100%"
-        px={{ base: "sm", sm: "md", lg: "xl" }}
+        px={{ base: "xs", sm: "md", lg: "xl" }}
         pt={{ base: "md", sm: 0 }}
-        className="animate-fade-in"
+        className="animate-[fadeIn_250ms_ease-out]"
       >
-        <Grid gutter={{ base: "sm", sm: "md", lg: "lg" }}>
+        <Grid gutter={{ base: "xs", sm: "md", lg: "lg" }}>
+          {/* Mobile: Single column that switches content. Desktop: Side-by-side */}
           <Grid.Col
             span={{ base: 12, sm: 12, md: 5, lg: 4, xl: 3 }}
-            className={selectedPeer ? "mobile-hide-when-selected" : ""}
+            className={
+              selectedPeer ? "hidden sm:block" : "relative sm:relative"
+            }
           >
             <Paper
               shadow="md"
-              p={{ base: "md", sm: "lg" }}
+              p={{ base: "sm", sm: "lg" }}
               withBorder
               h="100%"
-              className="peers-panel-paper"
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--bg) 0%, var(--bg-dark) 100%)",
-              }}
+              className="peers-panel-paper bg-gradient-to-br from-bg to-bg-dark border-border-subtle rounded-xl shadow-depth-m transition-all duration-normal hover:-translate-y-[1px] hover:shadow-depth-l"
             >
               <Group
                 justify="space-between"
@@ -708,14 +707,7 @@ export default function Home() {
               >
                 <Title
                   order={3}
-                  className="responsive-title"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
-                    WebkitBackgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
-                    backgroundClip: "text",
-                  }}
+                  className="responsive-title bg-gradient-to-br from-accent-primary-light to-accent-primary bg-clip-text text-transparent"
                 >
                   Nearby Peers
                 </Title>
@@ -726,7 +718,7 @@ export default function Home() {
                     onClick={handleRefreshPeers}
                     loading={refreshing}
                     size="lg"
-                    className="depth-card-hover responsive-icon-button"
+                    className="responsive-icon-button bg-bg-light border border-border-subtle rounded-lg shadow-depth-s transition-all duration-fast hover:bg-bg-lighter hover:shadow-depth-m hover:-translate-y-[1px] active:shadow-depth-inset active:translate-y-0 text-text-primary"
                   >
                     <IconRefresh size={18} className="responsive-icon" />
                   </ActionIcon>
@@ -734,19 +726,7 @@ export default function Home() {
               </Group>
 
               {peers.length === 0 ? (
-                <div
-                  className="depth-inset responsive-empty-state"
-                  style={{
-                    minHeight: "min(200px, 40vh)",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "0.75rem",
-                    textAlign: "center",
-                    padding: "clamp(1rem, 3vw, 2rem)",
-                  }}
-                >
+                <div className="responsive-empty-state bg-bg-dark border border-border-subtle rounded-xl shadow-depth-inset flex flex-col items-center justify-center gap-3 text-center p-[clamp(1rem,3vw,2rem)] min-h-[min(200px,40vh)]">
                   <ThemeIcon
                     size={64}
                     variant="light"
@@ -773,9 +753,9 @@ export default function Home() {
                   {peers.map((peer) => (
                     <div
                       key={peer.ip + peer.port}
-                      className={`depth-card-interactive ${
+                      className={`cursor-pointer bg-bg border border-border-subtle rounded-xl p-4 shadow-depth-s transition-all duration-fast hover:bg-bg-light hover:shadow-depth-m hover:-translate-y-[1px] active:shadow-depth-s active:translate-y-0 ${
                         selectedPeer?.ip === peer.ip
-                          ? "depth-card-selected"
+                          ? "bg-gradient-to-br from-bg-light to-bg border-2 border-accent-primary shadow-depth-m shadow-glow-primary"
                           : ""
                       }`}
                       onClick={() => setSelectedPeer(peer)}
@@ -791,14 +771,11 @@ export default function Home() {
                           variant="light"
                           color="blue"
                           radius="md"
-                          className="responsive-peer-icon"
-                          style={{
-                            flexShrink: 0,
-                            boxShadow:
-                              selectedPeer?.ip === peer.ip
-                                ? "var(--glow-primary)"
-                                : "var(--shadow-s)",
-                          }}
+                          className={`responsive-peer-icon flex-shrink-0 ${
+                            selectedPeer?.ip === peer.ip
+                              ? "shadow-glow-primary"
+                              : "shadow-depth-s"
+                          }`}
                         >
                           <IconDeviceDesktop size={24} />
                         </ThemeIcon>
@@ -807,15 +784,11 @@ export default function Home() {
                         >
                           <Text
                             fw={600}
-                            className="responsive-peer-name"
-                            style={{
-                              color:
-                                selectedPeer?.ip === peer.ip
-                                  ? "var(--accent-primary-light)"
-                                  : "var(--text-primary)",
-                              wordBreak: "break-word",
-                              lineHeight: "1.3",
-                            }}
+                            className={`responsive-peer-name break-words leading-[1.3] ${
+                              selectedPeer?.ip === peer.ip
+                                ? "text-accent-primary-light"
+                                : "text-text-primary"
+                            }`}
                           >
                             {peer.alias}
                           </Text>
@@ -839,31 +812,31 @@ export default function Home() {
             </Paper>
           </Grid.Col>
 
+          {/* Mobile send panel - appears in same position as peer list */}
           <Grid.Col
             span={{ base: 12, sm: 12, md: 7, lg: 8, xl: 9 }}
-            className={!selectedPeer ? "mobile-hide-when-not-selected" : ""}
+            className={
+              !selectedPeer ? "hidden sm:block" : "relative sm:relative"
+            }
           >
             {selectedPeer ? (
               <Paper
                 shadow="md"
-                p={{ base: "md", sm: "lg" }}
+                p={{ base: "sm", sm: "lg" }}
                 withBorder
-                className="send-panel-paper"
-                style={{
-                  background:
-                    "linear-gradient(135deg, var(--bg) 0%, var(--bg-dark) 100%)",
-                }}
+                className="send-panel-paper bg-gradient-to-br from-bg to-bg-dark border-border-subtle rounded-xl shadow-depth-m transition-all duration-normal hover:-translate-y-[1px] hover:shadow-depth-l"
               >
                 <Group
                   justify="space-between"
                   mb="lg"
                   wrap="nowrap"
-                  align="flex-start"
+                  align="center"
                   className="responsive-header-group"
                 >
                   <Group
-                    gap="sm"
+                    gap="md"
                     wrap="nowrap"
+                    align="center"
                     style={{ flex: 1, minWidth: 0, overflow: "hidden" }}
                   >
                     <Tooltip label="Back to peers">
@@ -871,10 +844,11 @@ export default function Home() {
                         variant="subtle"
                         color="gray"
                         onClick={() => setSelectedPeer(null)}
-                        size="lg"
-                        className="depth-card-hover mobile-back-button"
+                        size="xl"
+                        className="mobile-back-button bg-bg-light border border-border-subtle rounded-lg shadow-depth-s transition-all duration-fast hover:bg-bg-lighter hover:shadow-depth-m hover:-translate-y-[1px] active:shadow-depth-inset active:translate-y-0 text-text-primary flex-shrink-0"
+                        style={{ width: "44px", height: "44px" }}
                       >
-                        <IconArrowLeft size={18} />
+                        <IconArrowLeft size={24} stroke={2} />
                       </ActionIcon>
                     </Tooltip>
                     <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
@@ -883,16 +857,7 @@ export default function Home() {
                       </Text>
                       <Title
                         order={3}
-                        className="responsive-title"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
-                          WebkitBackgroundClip: "text",
-                          WebkitTextFillColor: "transparent",
-                          backgroundClip: "text",
-                          wordBreak: "break-word",
-                          lineHeight: "1.2",
-                        }}
+                        className="responsive-title bg-gradient-to-br from-accent-primary-light to-accent-primary bg-clip-text text-transparent break-words leading-[1.2]"
                       >
                         {selectedPeer.alias}
                       </Title>
@@ -903,10 +868,11 @@ export default function Home() {
                       variant="subtle"
                       color="gray"
                       onClick={() => setSelectedPeer(null)}
-                      size="lg"
-                      className="depth-card-hover mobile-hide-close-button"
+                      size="xl"
+                      className="mobile-hide-close-button bg-bg-light border border-border-subtle rounded-lg shadow-depth-s transition-all duration-fast hover:bg-bg-lighter hover:shadow-depth-m hover:-translate-y-[1px] active:shadow-depth-inset active:translate-y-0 text-text-primary flex-shrink-0"
+                      style={{ width: "44px", height: "44px" }}
                     >
-                      <IconX size={18} />
+                      <IconX size={24} stroke={2} />
                     </ActionIcon>
                   </Tooltip>
                 </Group>
@@ -939,38 +905,10 @@ export default function Home() {
 
                   <Tabs.Panel value="files">
                     <div
-                      className="depth-inset upload-area"
+                      className="upload-area bg-bg-dark border border-border-subtle rounded-xl shadow-depth-inset flex flex-col items-center justify-center gap-4 p-[clamp(1rem,3vw,2rem)] cursor-pointer transition-all duration-fast hover:scale-[1.01] hover:shadow-depth-l hover:shadow-glow-primary"
                       onClick={handleSelectFiles}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: "1rem",
-                        padding: "clamp(1rem, 3vw, 2rem)",
-                        cursor: "pointer",
-                        transition: "all 0.2s ease",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = "scale(1.01)";
-                        e.currentTarget.style.boxShadow =
-                          "var(--shadow-l), var(--glow-primary)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = "scale(1)";
-                        e.currentTarget.style.boxShadow = "";
-                      }}
                     >
-                      <div
-                        className="responsive-upload-icon-container"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
-                          borderRadius: "clamp(12px, 3vw, 20px)",
-                          padding: "clamp(1rem, 3vw, 1.5rem)",
-                          boxShadow: "var(--shadow-m), var(--glow-primary)",
-                        }}
-                      >
+                      <div className="responsive-upload-icon-container bg-gradient-to-br from-accent-primary-light to-accent-primary rounded-[clamp(12px,3vw,20px)] p-[clamp(1rem,3vw,1.5rem)] shadow-depth-m shadow-glow-primary">
                         <IconUpload
                           size={48}
                           color="white"
@@ -1006,12 +944,7 @@ export default function Home() {
                         }}
                         loading={sending}
                         size="lg"
-                        className="premium-button responsive-button"
-                        style={{
-                          minWidth: "clamp(160px, 40vw, 200px)",
-                          height: "clamp(48px, 10vw, 56px)",
-                          fontSize: "clamp(1.1rem, 2.5vw, 1.25rem)",
-                        }}
+                        className="responsive-button bg-gradient-to-b from-accent-primary-light to-accent-primary border border-accent-primary-dark shadow-depth-s shadow-glow-primary text-white font-semibold transition-all duration-normal hover:-translate-y-[2px] hover:shadow-depth-m hover:shadow-glow-primary min-w-[clamp(160px,40vw,200px)] h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
                       >
                         Select Files
                       </Button>
@@ -1041,12 +974,8 @@ export default function Home() {
                         loading={sending}
                         disabled={!message.trim()}
                         size="lg"
-                        className="premium-button responsive-button"
+                        className="responsive-button bg-gradient-to-b from-accent-primary-light to-accent-primary border border-accent-primary-dark shadow-depth-s shadow-glow-primary text-white font-semibold transition-all duration-normal hover:-translate-y-[2px] hover:shadow-depth-m hover:shadow-glow-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
                         fullWidth
-                        style={{
-                          height: "clamp(48px, 10vw, 56px)",
-                          fontSize: "clamp(1.1rem, 2.5vw, 1.25rem)",
-                        }}
                       >
                         Send Message
                       </Button>
@@ -1060,14 +989,7 @@ export default function Home() {
                 p={{ base: "md", sm: "xl" }}
                 withBorder
                 h="100%"
-                className="depth-inset empty-state-panel"
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "1rem",
-                }}
+                className="empty-state-panel bg-bg-dark border border-border-subtle rounded-xl shadow-depth-inset flex flex-col items-center justify-center gap-4"
               >
                 <ThemeIcon
                   size={80}

@@ -292,7 +292,7 @@ pub fn run() {
             let port = config.port;
             let alias = config.alias.clone();
 
-            eprintln!("Starting LocalSend Rust on port {}", port);
+            eprintln!("Starting LocalShare Rust on port {}", port);
             eprintln!("Device alias: {}", alias);
 
             // Register Service and keep daemon alive
