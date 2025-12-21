@@ -50,6 +50,13 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
         let mut should_restart = true;
         let mut daemon_opt: Option<ServiceDaemon> = None;
         let mut current_alias = my_alias;
+        // Track when the browse daemon was last started for periodic refresh
+        #[allow(unused_assignments)]
+        let mut last_browse_start: Option<std::time::Instant> = None;
+        // Periodic refresh interval: restart browse daemon every 30 seconds
+        // This ensures we catch services that were registered before browse started
+        // or services that were missed due to mDNS cache issues
+        const PERIODIC_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
         loop {
             // Create or recreate daemon if needed
@@ -65,6 +72,7 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
 
                 // Reset the restart flag
                 should_restart = false;
+                last_browse_start = Some(std::time::Instant::now());
 
                 // Create new daemon
                 match ServiceDaemon::new() {
@@ -102,6 +110,18 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
                                         }
                                         Err(_) => {
                                             // No command, continue processing events
+                                        }
+                                    }
+
+                                    // Check if it's time for periodic refresh
+                                    if let Some(start_time) = last_browse_start {
+                                        if start_time.elapsed() >= PERIODIC_REFRESH_INTERVAL {
+                                            eprintln!("Periodic refresh: restarting browse daemon to ensure fresh discovery");
+                                            // Clear peers map to force fresh discovery
+                                            peers_map_clone.lock().unwrap().clear();
+                                            emit_peers(&app, &peers_map_clone);
+                                            should_restart = true;
+                                            break;
                                         }
                                     }
 

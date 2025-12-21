@@ -166,9 +166,39 @@ async fn send_text_to_peer(
 }
 
 #[tauri::command]
-fn refresh_peers() -> Result<(), String> {
-    eprintln!("Refresh peers command called");
-    refresh_discovery()
+fn refresh_peers(state: State<'_, AppState>) -> Result<(), String> {
+    eprintln!("Refresh peers command called - re-registering service and refreshing discovery");
+
+    // Get current config
+    let config = state.config.lock().unwrap();
+    let alias = config.alias.clone();
+    let port = config.port;
+    drop(config); // Release lock before doing heavy operations
+
+    // Re-register the service to broadcast our presence again
+    // This ensures other clients can discover this client
+    {
+        let mut daemon_lock = state.service_daemon.lock().unwrap();
+        if let Some(old_daemon) = daemon_lock.take() {
+            eprintln!("Shutting down old mDNS service for refresh...");
+            if let Err(e) = old_daemon.shutdown() {
+                eprintln!("Warning: Failed to shutdown old daemon: {}", e);
+            }
+            // Give time for the unregistration to propagate
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    }
+
+    // Register the service again to broadcast our presence
+    eprintln!("Re-registering mDNS service with alias '{}'...", alias);
+    let daemon = register_service(&alias, port)?;
+    *state.service_daemon.lock().unwrap() = Some(daemon);
+
+    // Refresh discovery to restart the browse daemon
+    refresh_discovery()?;
+
+    eprintln!("Service re-registered and discovery refreshed successfully!");
+    Ok(())
 }
 
 #[tauri::command]
@@ -228,6 +258,7 @@ fn respond_to_file_transfer(
 }
 
 #[tauri::command]
+#[allow(unused_variables)]
 async fn get_file_name(app: AppHandle, file_path: String) -> Result<String, String> {
     // Handle Android content URIs like content://.../msf:1000285299
     // or content://.../document/12345
@@ -278,6 +309,59 @@ async fn get_file_name(app: AppHandle, file_path: String) -> Result<String, Stri
     }
 }
 
+#[tauri::command]
+fn open_file_location(file_path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+
+        let path = std::path::Path::new(&file_path);
+
+        // Check if path exists and is a file
+        let is_file = path.exists() && path.is_file();
+
+        if is_file {
+            // Open folder and select the file
+            // Use /select, to open Explorer and highlight the file
+            let file_path_str = path
+                .to_str()
+                .ok_or_else(|| "Invalid path encoding".to_string())?;
+
+            Command::new("explorer.exe")
+                .args(&["/select,", file_path_str])
+                .spawn()
+                .map_err(|e| format!("Failed to open file location: {}", e))?;
+        } else {
+            // If it's not a file or doesn't exist, try to open the directory
+            let dir_path = if path.is_dir() {
+                path
+            } else {
+                // Assume it's a file path and get parent directory
+                path.parent()
+                    .ok_or_else(|| "Failed to get parent directory".to_string())?
+            };
+
+            let dir_str = dir_path
+                .to_str()
+                .ok_or_else(|| "Invalid path encoding".to_string())?;
+
+            // Just open the folder
+            Command::new("explorer.exe")
+                .arg(dir_str)
+                .spawn()
+                .map_err(|e| format!("Failed to open folder: {}", e))?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = file_path;
+        Err("open_file_location is only supported on Windows".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -287,6 +371,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_upload::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let config = load_config(app.handle());
             let port = config.port;
@@ -341,7 +426,8 @@ pub fn run() {
             scan_media_file,
             generate_random_name,
             respond_to_file_transfer,
-            get_file_name
+            get_file_name,
+            open_file_location
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
