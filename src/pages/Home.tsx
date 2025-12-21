@@ -22,13 +22,14 @@ import {
   IconSend,
   IconRefresh,
   IconX,
-  IconArrowLeft,
+  IconClipboard,
 } from "@tabler/icons-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { AndroidFs, isAndroid } from "tauri-plugin-android-fs-api";
 import TextMessageModal from "../components/TextMessageModal";
 import FileTransferConfirmModal from "../components/FileTransferConfirmModal";
@@ -137,14 +138,50 @@ export default function Home() {
     const unlistenFileComplete = listen(
       "file-receive-complete",
       (event: any) => {
-        const { transfer_id, file_name } = event.payload;
+        const { transfer_id, file_name, file_path } = event.payload;
+
+        // Check if we're on Windows and have a file path
+        const isWindows = navigator.platform.toLowerCase().includes("win");
+        const hasFilePath = file_path && typeof file_path === "string";
+
+        // Create message with button if on Windows and file path is available
+        const messageContent =
+          isWindows && hasFilePath ? (
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+            >
+              <div>Successfully received {file_name}</div>
+              <Button
+                size="xs"
+                variant="light"
+                onClick={async () => {
+                  try {
+                    await invoke("open_file_location", { filePath: file_path });
+                  } catch (error) {
+                    console.error("Failed to open file location:", error);
+                    notifications.show({
+                      title: "Error",
+                      message: "Failed to open file location",
+                      color: "red",
+                    });
+                  }
+                }}
+                style={{ alignSelf: "flex-start", marginTop: "4px" }}
+              >
+                Open File Location
+              </Button>
+            </div>
+          ) : (
+            `Successfully received ${file_name}`
+          );
+
         notifications.update({
           id: transfer_id,
           title: "File Received",
-          message: `Successfully received ${file_name}`,
+          message: messageContent,
           color: "green",
           loading: false,
-          autoClose: 5000,
+          autoClose: isWindows && hasFilePath ? false : 5000, // Don't auto-close if button is available
         });
       }
     );
@@ -697,7 +734,20 @@ export default function Home() {
               p={{ base: "sm", sm: "lg" }}
               withBorder
               h="100%"
-              className="peers-panel-paper bg-gradient-to-br from-bg to-bg-dark border-border-subtle rounded-xl shadow-depth-m transition-all duration-normal hover:-translate-y-[1px] hover:shadow-depth-l"
+              className="peers-panel-paper rounded-xl"
+              style={{
+                background: "var(--bg)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "12px",
+                boxShadow: "var(--shadow-m)",
+                transition: "var(--transition-normal)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = "var(--shadow-l)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = "var(--shadow-m)";
+              }}
             >
               <Group
                 justify="space-between"
@@ -705,10 +755,7 @@ export default function Home() {
                 wrap="nowrap"
                 className="responsive-header-group"
               >
-                <Title
-                  order={3}
-                  className="responsive-title bg-gradient-to-br from-accent-primary-light to-accent-primary bg-clip-text text-transparent"
-                >
+                <Title order={3} className="responsive-title text-text-primary">
                   Nearby Peers
                 </Title>
                 <Tooltip label="Refresh discovery">
@@ -717,16 +764,44 @@ export default function Home() {
                     color="blue"
                     onClick={handleRefreshPeers}
                     loading={refreshing}
-                    size="lg"
-                    className="responsive-icon-button bg-bg-light border border-border-subtle rounded-lg shadow-depth-s transition-all duration-fast hover:bg-bg-lighter hover:shadow-depth-m hover:-translate-y-[1px] active:shadow-depth-inset active:translate-y-0 text-text-primary"
+                    size="xl"
+                    className="responsive-icon-button text-text-primary"
+                    style={{
+                      width: "44px",
+                      height: "44px",
+                      background:
+                        "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
+                      border: "1px solid var(--border-subtle)",
+                      borderRadius: "8px",
+                      boxShadow: "var(--shadow-s)",
+                      transition: "var(--transition-fast)",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!refreshing) {
+                        e.currentTarget.style.transform = "translateY(-1px)";
+                        e.currentTarget.style.boxShadow = "var(--shadow-m)";
+                        e.currentTarget.style.background =
+                          "linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter))";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "var(--shadow-s)";
+                      e.currentTarget.style.background =
+                        "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))";
+                    }}
                   >
-                    <IconRefresh size={18} className="responsive-icon" />
+                    <IconRefresh
+                      size={24}
+                      stroke={2}
+                      className="responsive-icon"
+                    />
                   </ActionIcon>
                 </Tooltip>
               </Group>
 
               {peers.length === 0 ? (
-                <div className="responsive-empty-state bg-bg-dark border border-border-subtle rounded-xl shadow-depth-inset flex flex-col items-center justify-center gap-3 text-center p-[clamp(1rem,3vw,2rem)] min-h-[min(200px,40vh)]">
+                <div className="responsive-empty-state bg-bg-dark border border-border-subtle rounded-xl flex flex-col items-center justify-center gap-3 text-center p-[clamp(1rem,3vw,2rem)] min-h-[min(200px,40vh)]">
                   <ThemeIcon
                     size={64}
                     variant="light"
@@ -753,12 +828,24 @@ export default function Home() {
                   {peers.map((peer) => (
                     <div
                       key={peer.ip + peer.port}
-                      className={`cursor-pointer bg-bg border border-border-subtle rounded-xl p-4 shadow-depth-s transition-all duration-fast hover:bg-bg-light hover:shadow-depth-m hover:-translate-y-[1px] active:shadow-depth-s active:translate-y-0 ${
-                        selectedPeer?.ip === peer.ip
-                          ? "bg-gradient-to-br from-bg-light to-bg border-2 border-accent-primary shadow-depth-m shadow-glow-primary"
-                          : ""
+                      className={`peer-card p-4 ${
+                        selectedPeer?.ip === peer.ip ? "selected" : ""
                       }`}
                       onClick={() => setSelectedPeer(peer)}
+                      style={{
+                        background:
+                          selectedPeer?.ip === peer.ip
+                            ? "var(--bg-light)"
+                            : "var(--bg)",
+                        border:
+                          selectedPeer?.ip === peer.ip
+                            ? "2px solid var(--accent-primary)"
+                            : "1px solid var(--border-subtle)",
+                        boxShadow:
+                          selectedPeer?.ip === peer.ip
+                            ? "var(--shadow-m)"
+                            : "var(--shadow-s)",
+                      }}
                     >
                       <Group
                         gap="md"
@@ -766,19 +853,21 @@ export default function Home() {
                         align="flex-start"
                         className="responsive-peer-group"
                       >
-                        <ThemeIcon
-                          size={48}
-                          variant="light"
-                          color="blue"
-                          radius="md"
-                          className={`responsive-peer-icon flex-shrink-0 ${
-                            selectedPeer?.ip === peer.ip
-                              ? "shadow-glow-primary"
-                              : "shadow-depth-s"
-                          }`}
-                        >
-                          <IconDeviceDesktop size={24} />
-                        </ThemeIcon>
+                        <div style={{ position: "relative", flexShrink: 0 }}>
+                          <ThemeIcon
+                            size={48}
+                            variant="light"
+                            color="blue"
+                            radius="md"
+                            className="responsive-peer-icon"
+                          >
+                            <IconDeviceDesktop size={24} />
+                          </ThemeIcon>
+                          <div
+                            className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-green-500 border-2 border-bg"
+                            style={{ zIndex: 10 }}
+                          />
+                        </div>
                         <div
                           style={{ flex: 1, minWidth: 0, overflow: "hidden" }}
                         >
@@ -824,7 +913,20 @@ export default function Home() {
                 shadow="md"
                 p={{ base: "sm", sm: "lg" }}
                 withBorder
-                className="send-panel-paper bg-gradient-to-br from-bg to-bg-dark border-border-subtle rounded-xl shadow-depth-m transition-all duration-normal hover:-translate-y-[1px] hover:shadow-depth-l"
+                className="send-panel-paper rounded-xl"
+                style={{
+                  background: "var(--bg)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "12px",
+                  boxShadow: "var(--shadow-m)",
+                  transition: "var(--transition-normal)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = "var(--shadow-l)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = "var(--shadow-m)";
+                }}
               >
                 <Group
                   justify="space-between"
@@ -833,44 +935,46 @@ export default function Home() {
                   align="center"
                   className="responsive-header-group"
                 >
-                  <Group
-                    gap="md"
-                    wrap="nowrap"
-                    align="center"
-                    style={{ flex: 1, minWidth: 0, overflow: "hidden" }}
-                  >
-                    <Tooltip label="Back to peers">
-                      <ActionIcon
-                        variant="subtle"
-                        color="gray"
-                        onClick={() => setSelectedPeer(null)}
-                        size="xl"
-                        className="mobile-back-button bg-bg-light border border-border-subtle rounded-lg shadow-depth-s transition-all duration-fast hover:bg-bg-lighter hover:shadow-depth-m hover:-translate-y-[1px] active:shadow-depth-inset active:translate-y-0 text-text-primary flex-shrink-0"
-                        style={{ width: "44px", height: "44px" }}
-                      >
-                        <IconArrowLeft size={24} stroke={2} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-                      <Text size="sm" c="dimmed" tt="uppercase" fw={600} mb={4}>
-                        Send to
-                      </Text>
-                      <Title
-                        order={3}
-                        className="responsive-title bg-gradient-to-br from-accent-primary-light to-accent-primary bg-clip-text text-transparent break-words leading-[1.2]"
-                      >
-                        {selectedPeer.alias}
-                      </Title>
-                    </div>
-                  </Group>
+                  <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                    <Text size="sm" c="dimmed" tt="uppercase" fw={600} mb={4}>
+                      Send to
+                    </Text>
+                    <Title
+                      order={3}
+                      className="responsive-title text-text-primary break-words leading-[1.2]"
+                    >
+                      {selectedPeer.alias}
+                    </Title>
+                  </div>
                   <Tooltip label="Close">
                     <ActionIcon
                       variant="subtle"
                       color="gray"
                       onClick={() => setSelectedPeer(null)}
                       size="xl"
-                      className="mobile-hide-close-button bg-bg-light border border-border-subtle rounded-lg shadow-depth-s transition-all duration-fast hover:bg-bg-lighter hover:shadow-depth-m hover:-translate-y-[1px] active:shadow-depth-inset active:translate-y-0 text-text-primary flex-shrink-0"
-                      style={{ width: "44px", height: "44px" }}
+                      className="mobile-hide-close-button text-text-primary flex-shrink-0"
+                      style={{
+                        width: "44px",
+                        height: "44px",
+                        background:
+                          "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
+                        border: "1px solid var(--border-subtle)",
+                        borderRadius: "8px",
+                        boxShadow: "var(--shadow-s)",
+                        transition: "var(--transition-fast)",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "translateY(-1px)";
+                        e.currentTarget.style.boxShadow = "var(--shadow-m)";
+                        e.currentTarget.style.background =
+                          "linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter))";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow = "var(--shadow-s)";
+                        e.currentTarget.style.background =
+                          "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))";
+                      }}
                     >
                       <IconX size={24} stroke={2} />
                     </ActionIcon>
@@ -903,14 +1007,25 @@ export default function Home() {
                     </Tabs.Tab>
                   </Tabs.List>
 
-                  <Tabs.Panel value="files">
+                  <Tabs.Panel
+                    value="files"
+                    className="tab-panel-fixed"
+                    style={{ overflow: "hidden" }}
+                  >
                     <div
-                      className="upload-area bg-bg-dark border border-border-subtle rounded-xl shadow-depth-inset flex flex-col items-center justify-center gap-4 p-[clamp(1rem,3vw,2rem)] cursor-pointer transition-all duration-fast hover:scale-[1.01] hover:shadow-depth-l hover:shadow-glow-primary"
+                      className="upload-area flex flex-col items-center justify-center gap-4 py-[clamp(1rem,3vw,2rem)] px-[clamp(0.5rem,2vw,1rem)] cursor-pointer h-full"
                       onClick={handleSelectFiles}
                     >
-                      <div className="responsive-upload-icon-container bg-gradient-to-br from-accent-primary-light to-accent-primary rounded-[clamp(12px,3vw,20px)] p-[clamp(1rem,3vw,1.5rem)] shadow-depth-m shadow-glow-primary">
+                      <div
+                        className="responsive-upload-icon-container rounded-[clamp(8px,2vw,16px)] p-[clamp(0.5rem,2vw,0.75rem)]"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
+                          boxShadow: "var(--shadow-m)",
+                        }}
+                      >
                         <IconUpload
-                          size={48}
+                          size={24}
                           color="white"
                           stroke={2}
                           className="responsive-upload-icon"
@@ -920,7 +1035,7 @@ export default function Home() {
                         style={{
                           textAlign: "center",
                           maxWidth: "100%",
-                          padding: "0 0.5rem",
+                          padding: "0 0.25rem",
                         }}
                       >
                         <Text
@@ -944,37 +1059,154 @@ export default function Home() {
                         }}
                         loading={sending}
                         size="lg"
-                        className="responsive-button bg-gradient-to-b from-accent-primary-light to-accent-primary border border-accent-primary-dark shadow-depth-s shadow-glow-primary text-white font-semibold transition-all duration-normal hover:-translate-y-[2px] hover:shadow-depth-m hover:shadow-glow-primary min-w-[clamp(160px,40vw,200px)] h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
+                        className="depth-button-primary responsive-button min-w-[clamp(160px,40vw,200px)] h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
+                        style={{
+                          background:
+                            "linear-gradient(to bottom, var(--accent-primary-light), var(--accent-primary))",
+                          border: "1px solid var(--accent-primary-dark)",
+                          color: "white",
+                          fontWeight: 600,
+                          boxShadow: "var(--shadow-m)",
+                          transition: "var(--transition-normal)",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!sending) {
+                            e.currentTarget.style.transform =
+                              "translateY(-2px)";
+                            e.currentTarget.style.boxShadow = "var(--shadow-l)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "translateY(0)";
+                          e.currentTarget.style.boxShadow = "var(--shadow-m)";
+                        }}
                       >
                         Select Files
                       </Button>
                     </div>
                   </Tabs.Panel>
 
-                  <Tabs.Panel value="text">
-                    <Stack gap="md" className="responsive-stack">
-                      <Textarea
-                        placeholder="Type a message..."
-                        minRows={6}
-                        autosize
-                        maxRows={10}
-                        value={message}
-                        onChange={(e) => setMessage(e.currentTarget.value)}
-                        className="responsive-textarea"
-                        styles={{
-                          input: {
-                            fontSize: "clamp(1.1rem, 2.5vw, 1.25rem)",
-                            lineHeight: "1.6",
-                          },
-                        }}
-                      />
+                  <Tabs.Panel
+                    value="text"
+                    className="tab-panel-fixed"
+                    style={{ overflow: "hidden" }}
+                  >
+                    <Stack
+                      gap="md"
+                      className="responsive-stack"
+                      style={{ height: "100%", overflow: "auto" }}
+                    >
+                      <div
+                        style={{ position: "relative", flex: 1, minHeight: 0 }}
+                      >
+                        <Textarea
+                          placeholder="Type a message..."
+                          minRows={6}
+                          autosize
+                          maxRows={10}
+                          value={message}
+                          onChange={(e) => setMessage(e.currentTarget.value)}
+                          className="responsive-textarea"
+                          styles={{
+                            input: {
+                              fontSize: "clamp(1.1rem, 2.5vw, 1.25rem)",
+                              lineHeight: "1.6",
+                              paddingRight: "3.5rem",
+                            },
+                          }}
+                        />
+                        <Tooltip label="Paste from clipboard">
+                          <ActionIcon
+                            variant="light"
+                            color="blue"
+                            onClick={async () => {
+                              try {
+                                const clipboardText = await readText();
+                                if (clipboardText) {
+                                  setMessage((prev) => prev + clipboardText);
+                                  notifications.show({
+                                    title: "Pasted",
+                                    message: "Content pasted from clipboard",
+                                    color: "green",
+                                    autoClose: 2000,
+                                  });
+                                } else {
+                                  notifications.show({
+                                    title: "Clipboard Empty",
+                                    message: "No text found in clipboard",
+                                    color: "yellow",
+                                    autoClose: 2000,
+                                  });
+                                }
+                              } catch (e) {
+                                notifications.show({
+                                  title: "Error",
+                                  message: `Failed to read clipboard: ${e}`,
+                                  color: "red",
+                                });
+                              }
+                            }}
+                            size="lg"
+                            className="absolute top-2 right-2 text-text-primary"
+                            style={{
+                              zIndex: 10,
+                              background:
+                                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
+                              border: "1px solid var(--border-subtle)",
+                              borderRadius: "8px",
+                              boxShadow: "var(--shadow-s)",
+                              transition: "var(--transition-fast)",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform =
+                                "translateY(-1px)";
+                              e.currentTarget.style.boxShadow =
+                                "var(--shadow-m)";
+                              e.currentTarget.style.background =
+                                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter))";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = "translateY(0)";
+                              e.currentTarget.style.boxShadow =
+                                "var(--shadow-s)";
+                              e.currentTarget.style.background =
+                                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))";
+                            }}
+                          >
+                            <IconClipboard
+                              size={18}
+                              className="responsive-icon"
+                            />
+                          </ActionIcon>
+                        </Tooltip>
+                      </div>
                       <Button
                         rightSection={<IconSend size={16} />}
                         onClick={handleSendMessage}
                         loading={sending}
                         disabled={!message.trim()}
                         size="lg"
-                        className="responsive-button bg-gradient-to-b from-accent-primary-light to-accent-primary border border-accent-primary-dark shadow-depth-s shadow-glow-primary text-white font-semibold transition-all duration-normal hover:-translate-y-[2px] hover:shadow-depth-m hover:shadow-glow-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
+                        className="depth-button-primary responsive-button h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
+                        style={{
+                          background:
+                            "linear-gradient(to bottom, var(--accent-primary-light), var(--accent-primary))",
+                          border: "1px solid var(--accent-primary-dark)",
+                          color: "white",
+                          fontWeight: 600,
+                          boxShadow: "var(--shadow-m)",
+                          transition: "var(--transition-normal)",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!sending && message.trim()) {
+                            e.currentTarget.style.transform =
+                              "translateY(-2px)";
+                            e.currentTarget.style.boxShadow = "var(--shadow-l)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "translateY(0)";
+                          e.currentTarget.style.boxShadow = "var(--shadow-m)";
+                        }}
                         fullWidth
                       >
                         Send Message
@@ -989,7 +1221,13 @@ export default function Home() {
                 p={{ base: "md", sm: "xl" }}
                 withBorder
                 h="100%"
-                className="empty-state-panel bg-bg-dark border border-border-subtle rounded-xl shadow-depth-inset flex flex-col items-center justify-center gap-4"
+                className="empty-state-panel rounded-xl flex flex-col items-center justify-center gap-4"
+                style={{
+                  background: "var(--bg-dark)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "12px",
+                  boxShadow: "var(--shadow-inset)",
+                }}
               >
                 <ThemeIcon
                   size={80}

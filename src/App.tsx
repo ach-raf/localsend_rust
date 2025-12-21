@@ -56,7 +56,7 @@ function Layout() {
       }}
       padding={{ base: "xs", sm: "md", md: "lg" }}
     >
-      <AppShell.Header className="pt-[max(env(safe-area-inset-top,0px),8px)] pb-3 mb-4 sm:mb-0 bg-gradient-to-b from-bg-light to-bg border-b border-border-subtle shadow-depth-m backdrop-blur-[10px] z-[200] min-h-[80px] sm:min-h-[70px]">
+      <AppShell.Header className="pt-[max(env(safe-area-inset-top,0px),8px)] pb-3 mb-4 sm:mb-0 bg-bg border-b border-border-subtle z-[200] min-h-[80px] sm:min-h-[70px]">
         <Group
           h="100%"
           px={{ base: "md", sm: "lg" }}
@@ -85,7 +85,7 @@ function Layout() {
               <Text
                 size="xl"
                 fw={700}
-                className="bg-gradient-to-br from-accent-primary-light to-accent-primary bg-clip-text text-transparent text-[1.35rem] leading-tight break-words"
+                className="text-text-primary text-[1.35rem] leading-tight break-words"
               >
                 {deviceName}
               </Text>
@@ -94,7 +94,7 @@ function Layout() {
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar className="bg-bg border-r border-border-subtle shadow-depth-s">
+      <AppShell.Navbar className="bg-bg border-r border-border-subtle">
         <div className="h-full flex flex-col p-4 sm:p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
           <div className="mb-4 sm:mb-6">
             <Text
@@ -116,7 +116,7 @@ function Layout() {
                 navigate("/");
                 toggle();
               }}
-              className="rounded-lg px-5 py-4 font-medium text-[1.15rem] text-text-secondary transition-all duration-fast hover:bg-bg-light hover:text-text-primary data-[active=true]:bg-gradient-to-r data-[active=true]:from-bg-light data-[active=true]:to-bg data-[active=true]:text-accent-primary-light data-[active=true]:shadow-depth-s data-[active=true]:font-semibold"
+              className="rounded-lg px-5 py-4 font-medium text-[1.15rem] text-text-secondary transition-all duration-fast hover:bg-bg-light hover:text-text-primary data-[active=true]:bg-bg-light data-[active=true]:text-accent-primary-light data-[active=true]:font-semibold"
             />
             <NavLink
               label="Settings"
@@ -126,7 +126,7 @@ function Layout() {
                 navigate("/settings");
                 toggle();
               }}
-              className="rounded-lg px-5 py-4 font-medium text-[1.15rem] text-text-secondary transition-all duration-fast hover:bg-bg-light hover:text-text-primary data-[active=true]:bg-gradient-to-r data-[active=true]:from-bg-light data-[active=true]:to-bg data-[active=true]:text-accent-primary-light data-[active=true]:shadow-depth-s data-[active=true]:font-semibold"
+              className="rounded-lg px-5 py-4 font-medium text-[1.15rem] text-text-secondary transition-all duration-fast hover:bg-bg-light hover:text-text-primary data-[active=true]:bg-bg-light data-[active=true]:text-accent-primary-light data-[active=true]:font-semibold"
             />
           </Stack>
         </div>

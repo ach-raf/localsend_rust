@@ -91,24 +91,59 @@ export default function Settings() {
         shadow="lg"
         p={{ base: "sm", sm: "lg", md: "xl" }}
         withBorder
-        className="bg-gradient-to-br from-bg to-bg-dark max-w-[800px] mx-auto border-border-subtle rounded-xl shadow-depth-m transition-all duration-normal hover:-translate-y-[1px] hover:shadow-depth-l"
+        className="max-w-[800px] mx-auto rounded-xl"
+        style={{
+          background: "var(--bg)",
+          border: "1px solid var(--border-subtle)",
+          borderRadius: "16px",
+          boxShadow: "var(--shadow-m)",
+          transition: "var(--transition-normal)",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.boxShadow = "var(--shadow-l)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow = "var(--shadow-m)";
+        }}
       >
-        {/* Header Section: Added Tailwind margin-bottom (mb-8 md:mb-12) */}
-        <div className="mb-8 md:mb-12">
+        {/* Header Section */}
+        <div
+          className="mb-8 md:mb-12"
+          style={{
+            paddingBottom: "1.5rem",
+            borderBottom: "1px solid var(--border-subtle)",
+          }}
+        >
           <Text size="sm" c="dimmed" tt="uppercase" fw={600} mb={4}>
             Configuration
           </Text>
           <Title
             order={2}
-            className="responsive-title bg-gradient-to-br from-accent-primary-light to-accent-primary bg-clip-text text-transparent"
+            className="responsive-title text-text-primary"
+            style={{
+              background:
+                "linear-gradient(to bottom, var(--text-primary), var(--text-secondary))",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}
           >
             Settings
           </Title>
         </div>
 
         <Stack gap="xl" className="responsive-settings-stack">
-          <div className="bg-bg border border-border-subtle rounded-xl p-6 shadow-depth-m transition-all duration-normal hover:-translate-y-[2px] hover:shadow-depth-l hover:border-border-strong responsive-settings-card">
-            <Text size="md" fw={600} mb="xs" c="dimmed" tt="uppercase">
+          <div
+            className="responsive-settings-card rounded-xl p-6"
+            style={{
+              background: "var(--bg-dark)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "12px",
+              boxShadow: "var(--shadow-inset)",
+              transition: "var(--transition-normal)",
+            }}
+          >
+            <Text size="md" fw={600} mb="md" c="dimmed" tt="uppercase">
               Device Identity
             </Text>
             <TextInput
@@ -124,14 +159,31 @@ export default function Settings() {
                   fontWeight: 600,
                   fontSize: "1.15rem",
                   marginBottom: "0.5rem",
+                  color: "var(--text-primary)",
                 },
                 description: {
                   fontSize: "1.05rem",
                   marginTop: "0.5rem",
+                  color: "var(--text-secondary)",
                 },
                 input: {
                   fontSize: "1.1rem",
+                  background:
+                    "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "8px",
+                  boxShadow: "var(--shadow-s)",
+                  transition: "var(--transition-fast)",
+                  color: "var(--text-primary)",
                 },
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.boxShadow = "var(--shadow-m)";
+                e.currentTarget.style.borderColor = "var(--accent-primary)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.boxShadow = "var(--shadow-s)";
+                e.currentTarget.style.borderColor = "var(--border-subtle)";
               }}
             />
             <Group mt="md">
@@ -140,15 +192,45 @@ export default function Settings() {
                 size="md"
                 onClick={handleRandomize}
                 leftSection={<IconDice size={20} />}
-                className="w-full sm:w-auto text-sm sm:text-base font-medium transition-all duration-fast bg-bg-light border border-border-subtle rounded-lg shadow-depth-s hover:bg-bg-lighter hover:shadow-depth-m hover:-translate-y-[1px] active:shadow-depth-inset active:translate-y-0"
+                className="depth-button-secondary w-full sm:w-auto text-sm sm:text-base font-medium"
+                style={{
+                  background:
+                    "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "8px",
+                  boxShadow: "var(--shadow-s)",
+                  transition: "var(--transition-normal)",
+                  color: "var(--text-primary)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.boxShadow = "var(--shadow-m)";
+                  e.currentTarget.style.background =
+                    "linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter))";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "var(--shadow-s)";
+                  e.currentTarget.style.background =
+                    "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))";
+                }}
               >
                 Generate Random Name
               </Button>
             </Group>
           </div>
 
-          <div className="bg-bg border border-border-subtle rounded-xl p-6 shadow-depth-m transition-all duration-normal hover:-translate-y-[2px] hover:shadow-depth-l hover:border-border-strong responsive-settings-card">
-            <Text size="md" fw={600} mb="xs" c="dimmed" tt="uppercase">
+          <div
+            className="responsive-settings-card rounded-xl p-6"
+            style={{
+              background: "var(--bg-dark)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "12px",
+              boxShadow: "var(--shadow-inset)",
+              transition: "var(--transition-normal)",
+            }}
+          >
+            <Text size="md" fw={600} mb="md" c="dimmed" tt="uppercase">
               Network Configuration
             </Text>
             <NumberInput
@@ -165,12 +247,38 @@ export default function Settings() {
                   fontWeight: 600,
                   fontSize: "1rem",
                   marginBottom: "0.5rem",
+                  color: "var(--text-primary)",
                 },
                 description: {
                   fontSize: "0.875rem",
                   marginTop: "0.5rem",
                   color: "var(--accent-warning)",
                 },
+                input: {
+                  fontSize: "1.1rem",
+                  background:
+                    "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "8px",
+                  boxShadow: "var(--shadow-s)",
+                  transition: "var(--transition-fast)",
+                  color: "var(--text-primary)",
+                },
+                control: {
+                  border: "1px solid var(--border-subtle)",
+                  background: "var(--bg-light)",
+                  color: "var(--text-primary)",
+                  boxShadow: "var(--shadow-s)",
+                  transition: "var(--transition-fast)",
+                },
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.boxShadow = "var(--shadow-m)";
+                e.currentTarget.style.borderColor = "var(--accent-primary)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.boxShadow = "var(--shadow-s)";
+                e.currentTarget.style.borderColor = "var(--border-subtle)";
               }}
             />
           </div>
@@ -178,7 +286,25 @@ export default function Settings() {
           <Button
             loading={loading}
             onClick={handleSave}
-            className="w-full mt-4 h-12 text-base md:h-14 md:text-lg bg-gradient-to-b from-accent-primary-light to-accent-primary border border-accent-primary-dark shadow-depth-s shadow-glow-primary text-white font-semibold transition-all duration-normal hover:-translate-y-[2px] hover:shadow-depth-m hover:shadow-glow-primary"
+            className="depth-button-primary w-full mt-4 h-12 text-base md:h-14 md:text-lg font-semibold"
+            style={{
+              background:
+                "linear-gradient(to bottom, var(--accent-primary-light), var(--accent-primary))",
+              border: "1px solid var(--accent-primary-dark)",
+              color: "white",
+              boxShadow: "var(--shadow-m)",
+              transition: "var(--transition-normal)",
+            }}
+            onMouseEnter={(e) => {
+              if (!loading) {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "var(--shadow-l)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "var(--shadow-m)";
+            }}
             fullWidth
           >
             Save Settings

@@ -19,6 +19,7 @@
     {
       "identifier": "http:default",
       "allow": [{ "url": "http://*" }, { "url": "https://*" }]
-    }
+    },
+    "clipboard-manager:allow-read-text"
   ]
 }

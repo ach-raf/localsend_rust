@@ -49,11 +49,7 @@ export default function FileTransferConfirmModal({
             fw={700}
             size="1.5rem"
             style={{
-              background:
-                "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
+              color: "var(--text-primary)",
             }}
           >
             File Request
@@ -68,22 +64,23 @@ export default function FileTransferConfirmModal({
       size="auto"
       overlayProps={{
         backgroundOpacity: 0.75,
-        blur: 10,
       }}
       styles={{
         header: {
           background: "linear-gradient(to bottom, var(--bg-light), var(--bg))",
           borderBottom: "1px solid var(--border-subtle)",
           padding: "clamp(1rem, 4vw, 1.5rem)",
+          boxShadow: "inset 0 1px 2px oklch(0.4 0 0 / 0.15)",
         },
         content: {
-          backgroundColor: "var(--bg)",
-          border: "2px solid var(--accent-primary)",
-          boxShadow: "var(--shadow-l), var(--glow-primary)",
+          backgroundColor: "var(--bg-light)",
+          border: "1px solid var(--border-subtle)",
           maxWidth: "min(90vw, 500px)",
+          boxShadow: "var(--shadow-l)",
         },
         body: {
           padding: "clamp(1rem, 4vw, 1.5rem)",
+          background: "var(--bg-light)",
         },
       }}
     >
@@ -96,10 +93,10 @@ export default function FileTransferConfirmModal({
                 "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
               borderRadius: "20px",
               padding: "clamp(1.25rem, 5vw, 1.5rem)",
-              boxShadow: "var(--shadow-m), var(--glow-primary)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              boxShadow: "var(--shadow-m)",
             }}
           >
             <IconFileDownload size={48} color="white" stroke={2.5} />
@@ -118,9 +115,10 @@ export default function FileTransferConfirmModal({
         <div
           style={{
             padding: "clamp(1rem, 4vw, 1.25rem)",
-            backgroundColor: "var(--bg-dark)",
+            backgroundColor: "var(--bg)",
             borderRadius: "12px",
             border: "1px solid var(--border-subtle)",
+            boxShadow: "var(--shadow-inset)",
           }}
         >
           <Stack gap="sm">
@@ -166,15 +164,25 @@ export default function FileTransferConfirmModal({
             onClick={handleAccept}
             size="lg"
             fullWidth
+            className="depth-button-primary"
             style={{
               background:
-                "linear-gradient(to bottom, var(--accent-success), oklch(0.55 0.18 145))",
-              border: "1px solid oklch(0.55 0.18 145)",
-              boxShadow: "var(--shadow-s), var(--glow-success)",
+                "linear-gradient(to bottom, oklch(0.7 0.18 145), var(--accent-success))",
+              border: "1px solid oklch(0.6 0.18 145)",
               color: "white",
               fontWeight: 600,
               height: "clamp(52px, 12vw, 56px)",
               fontSize: "clamp(1rem, 4vw, 1.15rem)",
+              boxShadow: "var(--shadow-m)",
+              transition: "var(--transition-normal)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-2px)";
+              e.currentTarget.style.boxShadow = "var(--shadow-l)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "var(--shadow-m)";
             }}
           >
             Accept Transfer
@@ -184,12 +192,28 @@ export default function FileTransferConfirmModal({
             onClick={handleReject}
             size="lg"
             fullWidth
+            className="depth-button-secondary"
             style={{
-              backgroundColor: "var(--bg-light)",
+              background:
+                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
               border: "1px solid var(--border-subtle)",
               color: "var(--text-secondary)",
               height: "clamp(48px, 11vw, 52px)",
               fontSize: "clamp(0.95rem, 3.5vw, 1.15rem)",
+              boxShadow: "var(--shadow-s)",
+              transition: "var(--transition-normal)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-1px)";
+              e.currentTarget.style.boxShadow = "var(--shadow-m)";
+              e.currentTarget.style.background =
+                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter))";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "var(--shadow-s)";
+              e.currentTarget.style.background =
+                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))";
             }}
           >
             Reject

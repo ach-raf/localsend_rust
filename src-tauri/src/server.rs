@@ -7,13 +7,14 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tauri::Emitter;
 use tauri::{AppHandle, Manager}; // Import Manager for path()
 use tokio::fs::{self};
 use tokio::sync::oneshot;
 use urlencoding::decode;
+use uuid::Uuid;
 
 #[cfg(target_os = "android")]
 use tauri_plugin_android_fs::{AndroidFsExt, PublicGeneralPurposeDir};
@@ -349,16 +350,10 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
         #[cfg(not(target_os = "android"))]
         {
             // On other platforms, use standard file I/O
-            let final_path = state.download_dir.join(&sanitized_name);
+            // Get a unique filename if the file already exists
+            let unique_filename = get_unique_filename(&state.download_dir, &sanitized_name).await;
+            let final_path = state.download_dir.join(&unique_filename);
             eprintln!("Saving file to: {:?}", final_path);
-
-            // Remove existing file if it exists
-            if final_path.exists() {
-                eprintln!("Final file already exists, removing: {:?}", final_path);
-                if let Err(e) = fs::remove_file(&final_path).await {
-                    eprintln!("Failed to remove existing file: {}", e);
-                }
-            }
 
             match fs::write(&final_path, &file_data).await {
                 Ok(_) => {
@@ -366,6 +361,8 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
                         "File saved successfully: {:?} ({} bytes)",
                         final_path, current_bytes
                     );
+                    // Update sanitized_name to the unique filename for the completion event
+                    sanitized_name = unique_filename;
                 }
                 Err(e) => {
                     eprintln!("Failed to write file: {}", e);
@@ -395,10 +392,27 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
         );
 
         // Then emit completion
-        let complete_payload = json!({
+        // Determine the file path based on platform
+        let file_path = if cfg!(target_os = "android") {
+            // On Android, we can't easily get the file path from MediaStore
+            // The file is saved via MediaStore API, so we'll return None
+            None
+        } else {
+            // On other platforms, use the final path (sanitized_name may have been updated with unique name)
+            let final_path = state.download_dir.join(&sanitized_name);
+            Some(final_path.to_string_lossy().to_string())
+        };
+
+        let mut complete_payload = json!({
             "transfer_id": transfer_id.clone(),
             "file_name": sanitized_name.clone()
         });
+
+        // Add file_path if available (Windows, Linux, macOS)
+        if let Some(path) = file_path {
+            complete_payload["file_path"] = json!(path);
+        }
+
         eprintln!("Emitting file-receive-complete: {:?}", complete_payload);
         if let Err(e) = state
             .app_handle
@@ -410,6 +424,37 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
         // Reset file_size for next field
         file_size = None;
     }
+}
+
+/// Generate a unique filename by adding a UUID if the file already exists
+async fn get_unique_filename(download_dir: &Path, filename: &str) -> String {
+    let path = download_dir.join(filename);
+
+    // If the file doesn't exist, return the original filename
+    if !path.exists() {
+        return filename.to_string();
+    }
+
+    // Split filename into name and extension
+    let (name, ext) = if let Some(dot_pos) = filename.rfind('.') {
+        let (n, e) = filename.split_at(dot_pos);
+        (n, &e[1..]) // Remove the dot from extension
+    } else {
+        (filename, "")
+    };
+
+    // Generate a unique filename with UUID
+    let new_filename = if ext.is_empty() {
+        format!("{}_{}", name, Uuid::new_v4())
+    } else {
+        format!("{}_{}.{}", name, Uuid::new_v4(), ext)
+    };
+
+    eprintln!(
+        "File '{}' already exists, using '{}' instead",
+        filename, new_filename
+    );
+    new_filename
 }
 
 async fn message_handler(State(state): State<ServerState>, Json(payload): Json<MessagePayload>) {
