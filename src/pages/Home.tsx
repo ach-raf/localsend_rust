@@ -1097,7 +1097,12 @@ export default function Home() {
                       style={{ height: "100%", overflow: "auto" }}
                     >
                       <div
-                        style={{ position: "relative", flex: 1, minHeight: 0 }}
+                        style={{
+                          position: "relative",
+                          flex: 1,
+                          minHeight: 0,
+                          marginBottom: "1rem",
+                        }}
                       >
                         <Textarea
                           placeholder="Type a message..."

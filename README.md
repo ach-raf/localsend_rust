@@ -9,6 +9,42 @@ A cross-platform file sharing application built with Tauri, React, and TypeScrip
 - 📱 Cross-platform: Windows, Android (and more coming soon)
 - 🎨 Modern and intuitive UI built with React and Mantine
 
+## Screenshots
+
+### Desktop Version
+
+<img src="screenshots/2025-12-25%2021_50_14-Local_Share-local-share.png" alt="Desktop Home" width="800" />
+_Home screen with nearby peers_
+
+<img src="screenshots/2025-12-25%2021_50_46-Local_Share-local-share.png" alt="Desktop Peer Selected" width="800" />
+_Selecting a peer to send files_
+
+<img src="screenshots/2025-12-25%2021_51_04-Local_Share-local-share.png" alt="Desktop Text Message" width="800" />
+_Sending text messages_
+
+<img src="screenshots/2025-12-25%2021_51_12-Local_Share-local-share.png" alt="Desktop Settings" width="800" />
+_Settings configuration_
+
+<img src="screenshots/2025-12-25%2021_52_49-Local_Share-local-share.png" alt="Desktop Incoming Transfer" width="800" />
+_Incoming file transfer request_
+
+<img src="screenshots/2025-12-25%2021_53_05-Local_Share-local-share.png" alt="Desktop File Received" width="800" />
+_File received notification_
+
+### Mobile Version
+
+<img src="screenshots/Screenshot_20251225_215124_Local%20Share.jpg" alt="Mobile Home" width="400" />
+_Mobile home screen_
+
+<img src="screenshots/Screenshot_20251225_215136_Local%20Share.jpg" alt="Mobile Send Files" width="400" />
+_Sending files from mobile_
+
+<img src="screenshots/Screenshot_20251225_215141_Local%20Share.jpg" alt="Mobile Send Text" width="400" />
+_Sending text messages from mobile_
+
+<img src="screenshots/Screenshot_20251225_215218_Local%20Share.jpg" alt="Mobile Incoming Transfer" width="400" />
+_Incoming file transfer on mobile_
+
 ## Building the App
 
 ### Build for Current Platform
