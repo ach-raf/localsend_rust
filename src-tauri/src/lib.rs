@@ -16,6 +16,7 @@ use tokio::sync::oneshot;
 #[derive(Clone)]
 pub struct PendingTransfers {
     pub transfers: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>,
+    pub authorized_sessions: Arc<Mutex<HashMap<String, bool>>>,
 }
 
 struct AppState {
@@ -100,8 +101,9 @@ async fn send_file_to_peer(
     peer_ip: String,
     peer_port: u16,
     file_path: String,
+    session_id: Option<String>,
 ) -> Result<(), String> {
-    send_file(app, peer_ip, peer_port, file_path).await
+    send_file(app, peer_ip, peer_port, file_path, session_id).await
 }
 
 #[tauri::command]
@@ -110,6 +112,7 @@ async fn send_file_bytes_to_peer(
     peer_port: u16,
     mut file_name: String,
     file_data: Vec<u8>,
+    session_id: Option<String>,
 ) -> Result<(), String> {
     // If filename looks like an Android content URI ID (e.g., "msf_1000285299"),
     // try to infer a better name from file content
@@ -151,7 +154,18 @@ async fn send_file_bytes_to_peer(
         }
     }
 
-    send_file_bytes(peer_ip, peer_port, file_name, file_data).await
+    send_file_bytes(peer_ip, peer_port, file_name, file_data, session_id).await
+}
+
+#[tauri::command]
+async fn request_batch_transfer_to_peer(
+    peer_ip: String,
+    peer_port: u16,
+    files: Vec<(String, u64)>,
+    state: State<'_, AppState>,
+) -> Result<(bool, String), String> {
+    let sender_alias = state.config.lock().unwrap().alias.clone();
+    crate::transfer::request_batch_transfer(peer_ip, peer_port, sender_alias, files).await
 }
 
 #[tauri::command]
@@ -255,6 +269,41 @@ fn respond_to_file_transfer(
     } else {
         Err(format!("Transfer {} not found", transfer_id))
     }
+}
+
+#[derive(serde::Serialize)]
+struct FileMetadata {
+    name: String,
+    size: u64,
+}
+
+#[tauri::command]
+async fn get_file_metadata(app: AppHandle, file_path: String) -> Result<FileMetadata, String> {
+    let name = get_file_name(app.clone(), file_path.clone()).await?;
+    
+    let size = if file_path.starts_with("content://") {
+        #[cfg(target_os = "android")]
+        {
+            use tauri_plugin_android_fs::{AndroidFsExt, FileUri};
+            use tauri_plugin_fs::FilePath;
+            let api = app.android_fs_async();
+            let url = url::Url::parse(&file_path).map_err(|e| e.to_string())?;
+            let fs_path = FilePath::Url(url);
+            let uri: FileUri = fs_path.into();
+            let metadata = api.get_metadata(&uri).await.map_err(|e| e.to_string())?;
+            metadata.len()
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            return Err("Content URIs are only supported on Android".to_string());
+        }
+    } else {
+        std::fs::metadata(&file_path)
+            .map_err(|e| e.to_string())?
+            .len()
+    };
+
+    Ok(FileMetadata { name, size })
 }
 
 #[tauri::command]
@@ -394,6 +443,7 @@ pub fn run() {
 
             let pending_transfers = PendingTransfers {
                 transfers: Arc::new(Mutex::new(HashMap::new())),
+                authorized_sessions: Arc::new(Mutex::new(HashMap::new())),
             };
 
             app.manage(AppState {
@@ -427,7 +477,9 @@ pub fn run() {
             generate_random_name,
             respond_to_file_transfer,
             get_file_name,
-            open_file_location
+            get_file_metadata,
+            open_file_location,
+            request_batch_transfer_to_peer
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

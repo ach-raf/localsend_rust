@@ -6,8 +6,7 @@ interface FileTransferConfirmModalProps {
   onClose: () => void;
   onAccept: () => void;
   onReject: () => void;
-  fileName: string;
-  fileSize?: number;
+  files: { name: string; size?: number }[];
 }
 
 function formatFileSize(bytes: number): string {
@@ -23,8 +22,7 @@ export default function FileTransferConfirmModal({
   onClose,
   onAccept,
   onReject,
-  fileName,
-  fileSize,
+  files,
 }: FileTransferConfirmModalProps) {
   const handleReject = () => {
     onReject();
@@ -35,6 +33,9 @@ export default function FileTransferConfirmModal({
     onAccept();
     onClose();
   };
+
+  const totalFiles = files.length;
+  const totalSize = files.reduce((acc, f) => acc + (f.size || 0), 0);
 
   return (
     <Modal
@@ -52,7 +53,7 @@ export default function FileTransferConfirmModal({
               color: "var(--text-primary)",
             }}
           >
-            File Request
+            {totalFiles > 1 ? `${totalFiles} Files Request` : "File Request"}
           </Text>
         </div>
       }
@@ -61,7 +62,7 @@ export default function FileTransferConfirmModal({
       closeOnClickOutside={false}
       closeOnEscape={false}
       withCloseButton={false}
-      size="auto"
+      size="md"
       overlayProps={{
         backgroundOpacity: 0.75,
       }}
@@ -107,8 +108,15 @@ export default function FileTransferConfirmModal({
             ta="center"
             style={{ lineHeight: "1.4" }}
           >
-            Do you want to accept this file?
+            {totalFiles > 1
+              ? `Do you want to accept these ${totalFiles} files?`
+              : "Do you want to accept this file?"}
           </Text>
+          {totalFiles > 1 && (
+            <Text size="sm" c="dimmed">
+              Total size: {formatFileSize(totalSize)}
+            </Text>
+          )}
         </Stack>
 
         {/* File information - prominent display */}
@@ -119,42 +127,39 @@ export default function FileTransferConfirmModal({
             borderRadius: "12px",
             border: "1px solid var(--border-subtle)",
             boxShadow: "var(--shadow-inset)",
+            maxHeight: "200px",
+            overflowY: "auto",
           }}
         >
           <Stack gap="sm">
-            <Group gap="sm" align="flex-start" wrap="nowrap">
-              <IconFile
-                size={24}
-                color="var(--accent-primary-light)"
-                style={{ flexShrink: 0, marginTop: "2px" }}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <Text
-                  size="clamp(1rem, 4vw, 1.1rem)"
-                  fw={600}
-                  style={{
-                    color: "var(--text-primary)",
-                    wordBreak: "break-word",
-                    overflowWrap: "break-word",
-                    lineHeight: "1.5",
-                  }}
-                >
-                  {fileName}
-                </Text>
-              </div>
-            </Group>
-            {fileSize !== undefined && (
-              <Text
-                size="clamp(0.9rem, 3.5vw, 1rem)"
-                c="dimmed"
-                style={{
-                  fontFamily: "monospace",
-                  marginLeft: "32px",
-                }}
-              >
-                Size: {formatFileSize(fileSize)}
-              </Text>
-            )}
+            {files.map((file, index) => (
+              <Group key={index} gap="sm" align="flex-start" wrap="nowrap">
+                <IconFile
+                  size={20}
+                  color="var(--accent-primary-light)"
+                  style={{ flexShrink: 0, marginTop: "2px" }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    size="sm"
+                    fw={600}
+                    style={{
+                      color: "var(--text-primary)",
+                      wordBreak: "break-word",
+                      overflowWrap: "break-word",
+                      lineHeight: "1.4",
+                    }}
+                  >
+                    {file.name}
+                  </Text>
+                  {file.size !== undefined && (
+                    <Text size="xs" c="dimmed">
+                      {formatFileSize(file.size)}
+                    </Text>
+                  )}
+                </div>
+              </Group>
+            ))}
           </Stack>
         </div>
 

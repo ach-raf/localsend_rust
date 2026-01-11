@@ -28,7 +28,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readFile } from "@tauri-apps/plugin-fs";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { AndroidFs, isAndroid } from "tauri-plugin-android-fs-api";
 import TextMessageModal from "../components/TextMessageModal";
@@ -52,6 +51,12 @@ interface FileTransferRequest {
   file_size?: number;
 }
 
+interface BatchTransferRequest {
+  session_id: string;
+  sender_alias: string;
+  files: { name: string; size: number }[];
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return "0 B";
   const k = 1024;
@@ -71,6 +76,8 @@ export default function Home() {
   const [messageModalOpened, setMessageModalOpened] = useState(false);
   const [fileTransferRequest, setFileTransferRequest] =
     useState<FileTransferRequest | null>(null);
+  const [batchTransferRequest, setBatchTransferRequest] =
+    useState<BatchTransferRequest | null>(null);
   const [transferModalOpened, setTransferModalOpened] = useState(false);
 
   // Use ref to access current selectedPeer in event handlers without re-subscribing
@@ -181,7 +188,7 @@ export default function Home() {
           message: messageContent,
           color: "green",
           loading: false,
-          autoClose: isWindows && hasFilePath ? false : 5000, // Don't auto-close if button is available
+          autoClose: 10000, // Close after 10 seconds, even if button is available
         });
       }
     );
@@ -199,7 +206,19 @@ export default function Home() {
       "file-transfer-request",
       (event) => {
         console.log("File transfer request:", event.payload);
+        setBatchTransferRequest(null);
         setFileTransferRequest(event.payload);
+        setTransferModalOpened(true);
+      }
+    );
+
+    // Listen for batch transfer requests
+    const unlistenBatchTransferRequest = listen<BatchTransferRequest>(
+      "batch-transfer-request",
+      (event) => {
+        console.log("Batch transfer request:", event.payload);
+        setFileTransferRequest(null);
+        setBatchTransferRequest(event.payload);
         setTransferModalOpened(true);
       }
     );
@@ -217,15 +236,19 @@ export default function Home() {
     );
 
     // Listen for file transfer timeout
-    const unlistenFileTransferTimeout = listen(
+    const unlistenFileTransferTimeout = listen<string>(
       "file-transfer-timeout",
       (event) => {
-        notifications.show({
+        // Try to update existing progress notification if it exists
+        notifications.update({
+          id: event.payload,
           title: "Transfer Timeout",
           message: `File transfer timed out: ${event.payload}`,
           color: "orange",
           autoClose: 5000,
+          loading: false,
         });
+
         // Close the modal if it's still open for this transfer
         if (fileTransferRequest?.transfer_id === event.payload) {
           setTransferModalOpened(false);
@@ -280,82 +303,85 @@ export default function Home() {
         setSending(true);
 
         try {
-          for (let filePath of filePaths) {
-            try {
+          // 1. Get metadata for all files
+          const filesMetadata = await Promise.all(
+            filePaths.map(async (path) => {
               // On Windows, Tauri might provide file:/// URLs, normalize them
+              let normalizedPath = path;
+              if (normalizedPath.startsWith("file:///")) {
+                normalizedPath = normalizedPath.replace("file:///", "");
+                normalizedPath = decodeURIComponent(normalizedPath);
+              }
+              return await invoke<{ name: string; size: number }>(
+                "get_file_metadata",
+                { filePath: normalizedPath }
+              );
+            })
+          );
+
+          // 2. Request transfer for the whole batch
+          const [accepted, sessionId] = await invoke<[boolean, string]>(
+            "request_batch_transfer_to_peer",
+            {
+              peerIp: currentPeer.ip,
+              peerPort: currentPeer.port,
+              files: filesMetadata.map((f) => [f.name, f.size]),
+            }
+          );
+
+          if (!accepted) {
+            setSending(false);
+            notifications.show({
+              title: "Transfer Rejected",
+              message: `The peer rejected the transfer of ${filesMetadata.length} files.`,
+              color: "yellow",
+            });
+            return;
+          }
+
+          // 3. Send each file with the session ID
+          for (let i = 0; i < filePaths.length; i++) {
+            let filePath = filePaths[i];
+            const fileName = filesMetadata[i].name;
+
+            try {
               if (filePath.startsWith("file:///")) {
                 filePath = filePath.replace("file:///", "");
-                // Decode URL encoding (e.g., %20 -> space)
                 filePath = decodeURIComponent(filePath);
               }
 
-              let fileName = filePath.split(/[\\/]/).pop() || filePath;
+              const notificationId = `${sessionId}-${i}`;
 
-              // On Android content URIs, try to get better filename
-              if (filePath.startsWith("content://")) {
-                try {
-                  // Try Android FS API first
-                  if (isAndroid()) {
-                    try {
-                      fileName = await AndroidFs.getName(filePath);
-                    } catch {
-                      // Fallback to backend
-                      fileName = await invoke<string>("get_file_name", {
-                        filePath,
-                      });
-                    }
-                  } else {
-                    fileName = await invoke<string>("get_file_name", {
-                      filePath,
-                    });
-                  }
-                } catch (e) {
-                  console.warn(
-                    "Could not get proper filename from content URI:",
-                    e
-                  );
-                  // Use a fallback name
-                  const uriParts = filePath.split("/");
-                  const lastPart = uriParts[uriParts.length - 1] || "";
-                  fileName = lastPart.split("?")[0] || "file";
-                }
-              }
+              notifications.show({
+                id: notificationId,
+                title: `Sending ${fileName}`,
+                message: "Starting...",
+                loading: true,
+                autoClose: false,
+              });
 
-              console.log(`Attempting to send file: ${fileName} (${filePath})`);
-
-              // Pass file path/URI directly to backend - it handles both content URIs and regular paths
               await invoke("send_file_to_peer", {
                 peerIp: currentPeer.ip,
                 peerPort: currentPeer.port,
                 filePath: filePath,
+                sessionId: sessionId,
               });
 
-              console.log("File sent successfully");
-
-              notifications.show({
+              notifications.update({
+                id: notificationId,
                 title: "Sent",
-                message: `Sent ${fileName}`,
+                message: `Successfully sent ${fileName}`,
                 color: "green",
+                loading: false,
+                autoClose: 2000,
               });
             } catch (e) {
-              // Extract filename safely for error message
-              let errorFileName: string = "file";
-              if (typeof filePath === "string") {
-                if (filePath.startsWith("content://")) {
-                  const uriParts = filePath.split("/");
-                  const lastPart = uriParts[uriParts.length - 1] || "";
-                  errorFileName = lastPart.split("?")[0] || "file";
-                } else {
-                  errorFileName = filePath.split(/[\\/]/).pop() || filePath;
-                }
-              }
-
               const errorMsg =
                 typeof e === "string" ? e : e?.toString() || String(e);
-              console.error(`Failed to send ${errorFileName}:`, e);
+              console.error(`Failed to send ${fileName}:`, e);
               notifications.show({
                 title: "Error",
-                message: `Failed to send ${errorFileName}: ${errorMsg}`,
+                message: `Failed to send ${fileName}: ${errorMsg}`,
                 color: "red",
               });
             }
@@ -380,6 +406,7 @@ export default function Home() {
       unlistenFileComplete.then((f) => f());
       unlistenMessage.then((f) => f());
       unlistenFileTransferRequest.then((f) => f());
+      unlistenBatchTransferRequest.then((f) => f());
       unlistenFileTransferRejected.then((f) => f());
       unlistenFileTransferTimeout.then((f) => f());
       unlistenFileTransferError.then((f) => f());
@@ -478,41 +505,47 @@ export default function Home() {
       }
 
       setSending(true);
-      for (const filePath of filePaths) {
+
+      // 1. Get metadata for all files
+      const filesMetadata = await Promise.all(
+        filePaths.map(async (path) => {
+          return await invoke<{ name: string; size: number }>(
+            "get_file_metadata",
+            { filePath: path }
+          );
+        })
+      );
+
+      // 2. Request transfer for the whole batch
+      console.log("Requesting batch transfer for files:", filesMetadata);
+      const [accepted, sessionId] = await invoke<[boolean, string]>(
+        "request_batch_transfer_to_peer",
+        {
+          peerIp: selectedPeer.ip,
+          peerPort: selectedPeer.port,
+          files: filesMetadata.map((f) => [f.name, f.size]),
+        }
+      );
+      console.log("Batch transfer request response:", { accepted, sessionId });
+
+      if (!accepted) {
+        setSending(false);
+        notifications.show({
+          title: "Transfer Rejected",
+          message: `The peer rejected the transfer of ${filesMetadata.length} files.`,
+          color: "yellow",
+        });
+        return;
+      }
+
+      // 3. Send each file with the session ID
+      for (let i = 0; i < filePaths.length; i++) {
+        const filePath = filePaths[i];
+        const fileName = filesMetadata[i].name;
+
         try {
-          // Extract filename from path - handle both regular paths and content URIs
-          let fileName = filePath.split(/[\\/]/).pop() || filePath;
-
-          // On Android content URIs, get filename using Android FS API or backend
-          if (filePath.startsWith("content://")) {
-            try {
-              // Try Android FS API first
-              fileName = await AndroidFs.getName(filePath);
-              console.log("Got filename from Android FS API:", fileName);
-            } catch (e) {
-              console.warn(
-                "Could not get filename from Android FS API, trying backend:",
-                e
-              );
-              // Fallback to backend
-              try {
-                fileName = await invoke<string>("get_file_name", {
-                  filePath,
-                });
-                console.log("Got filename from backend:", fileName);
-              } catch (backendError) {
-                console.warn(
-                  "Could not get filename from backend:",
-                  backendError
-                );
-                // Use a generic name as last resort
-                fileName = "file";
-              }
-            }
-          }
-
-          // Use a safe identifier for notifications (avoid [object Object])
-          const notificationId = fileName || `file-${Date.now()}`;
+          // Use a safe identifier for notifications
+          const notificationId = `${sessionId}-${i}`;
 
           notifications.show({
             id: notificationId,
@@ -522,56 +555,13 @@ export default function Home() {
             autoClose: false,
           });
 
-          // On Android with content URIs, pass URI directly to Rust backend
-          // The Rust backend already handles content URIs properly using Android FS API
-          if (isAndroid() && filePath.startsWith("content://")) {
-            try {
-              console.log("Sending Android content URI to backend:", filePath);
-              // Pass the content URI directly to the Rust backend
-              // The backend will handle opening the file using Android FS API
-              await invoke("send_file_to_peer", {
-                peerIp: selectedPeer.ip,
-                peerPort: selectedPeer.port,
-                filePath: filePath,
-              });
-              console.log("File sent successfully via content URI");
-            } catch (sendError) {
-              console.error("Failed to send file via content URI:", sendError);
-              throw new Error(`Failed to send file: ${sendError}`);
-            }
-          } else {
-            // Desktop or regular file paths
-            try {
-              // Try direct path method first (Desktop optimization)
-              await invoke("send_file_to_peer", {
-                peerIp: selectedPeer.ip,
-                peerPort: selectedPeer.port,
-                filePath: filePath,
-              });
-            } catch (pathError) {
-              // Fall back to reading file bytes
-              try {
-                console.log(
-                  "Path method failed, trying bytes method with filename:",
-                  fileName
-                );
-                // Try to read the file as bytes using the fs plugin
-                const fileData = await readFile(filePath);
-
-                // Send as bytes with the extracted/corrected filename
-                await invoke("send_file_bytes_to_peer", {
-                  peerIp: selectedPeer.ip,
-                  peerPort: selectedPeer.port,
-                  fileName: fileName,
-                  fileData: Array.from(fileData),
-                });
-              } catch (readError) {
-                throw new Error(
-                  `Failed to send via path or bytes: ${pathError} / ${readError}`
-                );
-              }
-            }
-          }
+          // Pass session_id to backend
+          await invoke("send_file_to_peer", {
+            peerIp: selectedPeer.ip,
+            peerPort: selectedPeer.port,
+            filePath: filePath,
+            sessionId: sessionId,
+          });
 
           notifications.update({
             id: notificationId,
@@ -582,33 +572,16 @@ export default function Home() {
             autoClose: 2000,
           });
         } catch (e) {
-          // Extract filename safely for error message (synchronous only)
-          let errorFileName: string = "file";
-          if (typeof filePath === "string") {
-            if (filePath.startsWith("content://")) {
-              // For content URIs, use a generic name or try to extract from URI
-              // We can't use async operations here, so use a fallback
-              const uriParts = filePath.split("/");
-              const lastPart = uriParts[uriParts.length - 1] || "";
-              // Remove query parameters
-              const cleanPart = lastPart.split("?")[0];
-              errorFileName = cleanPart || "file";
-            } else {
-              errorFileName = filePath.split(/[\\/]/).pop() || filePath;
-            }
-          }
-
-          // Ensure we have a string, not an object
           const errorMsg =
             typeof e === "string" ? e : e?.toString() || String(e);
 
           notifications.show({
             title: "Error",
-            message: `Failed to send ${errorFileName}: ${errorMsg}`,
+            message: `Failed to send ${fileName}: ${errorMsg}`,
             color: "red",
             autoClose: 5000,
           });
-          console.error(`Failed to send ${errorFileName}:`, e);
+          console.error(`Failed to send ${fileName}:`, e);
         }
       }
     } catch (e) {
@@ -671,15 +644,20 @@ export default function Home() {
   };
 
   const handleAcceptTransfer = async () => {
-    if (!fileTransferRequest) return;
+    if (!fileTransferRequest && !batchTransferRequest) return;
 
     try {
+      const transferId = fileTransferRequest
+        ? fileTransferRequest.transfer_id
+        : batchTransferRequest!.session_id;
+
       await invoke("respond_to_file_transfer", {
-        transferId: fileTransferRequest.transfer_id,
+        transferId: transferId,
         accepted: true,
       });
       setTransferModalOpened(false);
       setFileTransferRequest(null);
+      setBatchTransferRequest(null);
     } catch (e) {
       notifications.show({
         title: "Error",
@@ -690,15 +668,20 @@ export default function Home() {
   };
 
   const handleRejectTransfer = async () => {
-    if (!fileTransferRequest) return;
+    if (!fileTransferRequest && !batchTransferRequest) return;
 
     try {
+      const transferId = fileTransferRequest
+        ? fileTransferRequest.transfer_id
+        : batchTransferRequest!.session_id;
+
       await invoke("respond_to_file_transfer", {
-        transferId: fileTransferRequest.transfer_id,
+        transferId: transferId,
         accepted: false,
       });
       setTransferModalOpened(false);
       setFileTransferRequest(null);
+      setBatchTransferRequest(null);
       notifications.show({
         title: "Transfer Rejected",
         message: "File transfer rejected",
@@ -1269,14 +1252,22 @@ export default function Home() {
         />
       )}
 
-      {fileTransferRequest && (
+      {(fileTransferRequest || batchTransferRequest) && (
         <FileTransferConfirmModal
           opened={transferModalOpened}
           onClose={() => setTransferModalOpened(false)}
           onAccept={handleAcceptTransfer}
           onReject={handleRejectTransfer}
-          fileName={fileTransferRequest.file_name}
-          fileSize={fileTransferRequest.file_size}
+          files={
+            fileTransferRequest
+              ? [
+                  {
+                    name: fileTransferRequest.file_name,
+                    size: fileTransferRequest.file_size,
+                  },
+                ]
+              : batchTransferRequest!.files
+          }
         />
       )}
     </>

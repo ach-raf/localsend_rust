@@ -11,6 +11,7 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 
 #[cfg(target_os = "android")]
 use tauri_plugin_android_fs::{AndroidFsExt, FileUri};
+#[cfg(target_os = "android")]
 use tauri_plugin_fs::FilePath;
 
 /// Detects if a file is an APK and returns the correct MIME type
@@ -48,10 +49,11 @@ pub async fn send_file(
     peer_ip: String,
     peer_port: u16,
     file_path: String,
+    session_id: Option<String>,
 ) -> Result<(), String> {
     eprintln!(
-        "send_file called with: {} -> {}:{}",
-        file_path, peer_ip, peer_port
+        "send_file called with: {} -> {}:{} (session: {:?})",
+        file_path, peer_ip, peer_port, session_id
     );
 
     let client = Client::builder()
@@ -196,9 +198,13 @@ pub async fn send_file(
         .mime_str(&mime_type)
         .map_err(|e| e.to_string())?;
 
-    let form = multipart::Form::new()
-        .text("size", file_size.to_string())
-        .part("file", part);
+    let mut form = multipart::Form::new();
+
+    if let Some(sid) = session_id {
+        form = form.text("session_id", sid);
+    }
+
+    form = form.text("size", file_size.to_string()).part("file", part);
 
     eprintln!("Sending multipart request...");
     let res = client
@@ -233,13 +239,15 @@ pub async fn send_file_bytes(
     peer_port: u16,
     file_name: String,
     file_data: Vec<u8>,
+    session_id: Option<String>,
 ) -> Result<(), String> {
     eprintln!(
-        "send_file_bytes called: {} ({} bytes) -> {}:{}",
+        "send_file_bytes called: {} ({} bytes) -> {}:{} (session: {:?})",
         file_name,
         file_data.len(),
         peer_ip,
-        peer_port
+        peer_port,
+        session_id
     );
 
     let client = Client::builder()
@@ -260,9 +268,13 @@ pub async fn send_file_bytes(
         .mime_str(&mime_type)
         .map_err(|e| e.to_string())?;
 
-    let form = multipart::Form::new()
-        .text("size", file_size.to_string())
-        .part("file", part);
+    let mut form = multipart::Form::new();
+
+    if let Some(sid) = session_id {
+        form = form.text("session_id", sid);
+    }
+
+    form = form.text("size", file_size.to_string()).part("file", part);
 
     eprintln!("Sending multipart request with filename: {}", file_name);
     let res = client
@@ -280,6 +292,48 @@ pub async fn send_file_bytes(
         Ok(())
     } else {
         Err(format!("Upload failed with status: {}", res.status()))
+    }
+}
+
+pub async fn request_batch_transfer(
+    peer_ip: String,
+    peer_port: u16,
+    sender_alias: String,
+    files: Vec<(String, u64)>,
+) -> Result<(bool, String), String> {
+    let client = Client::new();
+    let url = format!("http://{}:{}/request", peer_ip, peer_port);
+    let session_id = uuid::Uuid::new_v4().to_string();
+
+    let files_payload: Vec<serde_json::Value> = files
+        .into_iter()
+        .map(|(name, size)| {
+            json!({
+                "name": name,
+                "size": size
+            })
+        })
+        .collect();
+
+    let payload = json!({
+        "session_id": session_id,
+        "sender_alias": sender_alias,
+        "files": files_payload
+    });
+
+    let res = client
+        .post(&url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if res.status().is_success() {
+        let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+        let accepted = body["accepted"].as_bool().unwrap_or(false);
+        Ok((accepted, session_id))
+    } else {
+        Err(format!("Request failed with status: {}", res.status()))
     }
 }
 

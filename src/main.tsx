@@ -53,7 +53,7 @@ const theme = createTheme({
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="dark">
-      <Notifications position="top-right" zIndex={1000} />
+      <Notifications position="top-right" zIndex={1000} autoClose={5000} />
       <App />
     </MantineProvider>
   </React.StrictMode>

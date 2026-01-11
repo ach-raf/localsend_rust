@@ -26,6 +26,19 @@ struct ServerState {
     pending_transfers: PendingTransfers,
 }
 
+#[derive(Serialize, Clone, Deserialize)]
+struct FileInfo {
+    name: String,
+    size: u64,
+}
+
+#[derive(Serialize, Clone, Deserialize)]
+struct BatchTransferRequest {
+    session_id: String,
+    sender_alias: String,
+    files: Vec<FileInfo>,
+}
+
 #[derive(Serialize, Clone)]
 struct FileTransferRequest {
     transfer_id: String,
@@ -86,6 +99,7 @@ pub async fn start_server(app: AppHandle, port: u16, pending_transfers: PendingT
 
     let app_router = Router::new()
         .route("/upload", post(upload_handler))
+        .route("/request", post(request_handler))
         .route("/message", post(message_handler))
         .route("/ping", get(|| async { "pong" }))
         .layer(DefaultBodyLimit::disable()) // Disable body size limit for file transfers
@@ -101,13 +115,26 @@ pub async fn start_server(app: AppHandle, port: u16, pending_transfers: PendingT
 
 async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipart) {
     let mut file_size: Option<u64> = None;
+    let mut session_id: Option<String> = None;
 
     while let Ok(Some(mut field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("").to_string();
+        eprintln!("Processing field: {}", name);
         if name == "size" {
             if let Ok(txt) = field.text().await {
                 file_size = txt.parse().ok();
                 eprintln!("Received file size: {:?}", file_size);
+            }
+            continue;
+        }
+
+        if name == "session_id" {
+            if let Ok(txt) = field.text().await {
+                // Remove potential quotes and trim
+                let sid = txt.trim().trim_matches('"').to_string();
+                eprintln!("Raw session_id field text: '{}'", txt);
+                session_id = Some(sid);
+                eprintln!("Final session ID: {:?}", session_id);
             }
             continue;
         }
@@ -144,54 +171,80 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
                 .as_millis()
         );
 
-        // Create a oneshot channel for the response
-        let (tx, rx) = oneshot::channel();
-
-        // Store the sender in pending_transfers
-        {
-            let mut transfers = state.pending_transfers.transfers.lock().unwrap();
-            transfers.insert(transfer_id.clone(), tx);
+        // Check if this transfer is pre-authorized via session
+        let mut pre_authorized = false;
+        if let Some(ref sid) = session_id {
+            let sessions = state.pending_transfers.authorized_sessions.lock().unwrap();
+            let authorized = sessions.get(sid).cloned().unwrap_or(false);
+            if authorized {
+                pre_authorized = true;
+                eprintln!(
+                    "Transfer {} is pre-authorized via session {}",
+                    transfer_id, sid
+                );
+            } else {
+                eprintln!(
+                    "Session {} found in request but NOT authorized. Authorized sessions: {:?}",
+                    sid,
+                    sessions.keys().collect::<Vec<_>>()
+                );
+            }
+        } else {
+            eprintln!("No session_id field found yet for transfer {}", transfer_id);
         }
 
-        // Emit event to frontend requesting confirmation
-        let request = FileTransferRequest {
-            transfer_id: transfer_id.clone(),
-            file_name: sanitized_name.clone(),
-            file_size,
-        };
+        let accepted = if pre_authorized {
+            true
+        } else {
+            // Create a oneshot channel for the response
+            let (tx, rx) = oneshot::channel();
 
-        if let Err(e) = state.app_handle.emit("file-transfer-request", &request) {
-            eprintln!("Failed to emit file-transfer-request: {}", e);
-            // Clean up
-            let mut transfers = state.pending_transfers.transfers.lock().unwrap();
-            transfers.remove(&transfer_id);
-            continue;
-        }
-
-        eprintln!(
-            "Waiting for user confirmation for transfer: {}",
-            transfer_id
-        );
-
-        // Wait for user response (with timeout)
-        let accepted = match tokio::time::timeout(
-            std::time::Duration::from_secs(60), // 60 second timeout
-            rx,
-        )
-        .await
-        {
-            Ok(Ok(response)) => {
-                eprintln!("User response for {}: {}", transfer_id, response);
-                response
+            // Store the sender in pending_transfers
+            {
+                let mut transfers = state.pending_transfers.transfers.lock().unwrap();
+                transfers.insert(transfer_id.clone(), tx);
             }
-            Ok(Err(_)) => {
-                eprintln!("Channel closed for transfer: {}", transfer_id);
-                false
+
+            // Emit event to frontend requesting confirmation
+            let request = FileTransferRequest {
+                transfer_id: transfer_id.clone(),
+                file_name: sanitized_name.clone(),
+                file_size,
+            };
+
+            if let Err(e) = state.app_handle.emit("file-transfer-request", &request) {
+                eprintln!("Failed to emit file-transfer-request: {}", e);
+                // Clean up
+                let mut transfers = state.pending_transfers.transfers.lock().unwrap();
+                transfers.remove(&transfer_id);
+                continue;
             }
-            Err(_) => {
-                eprintln!("Timeout waiting for confirmation: {}", transfer_id);
-                let _ = state.app_handle.emit("file-transfer-timeout", &transfer_id);
-                false
+
+            eprintln!(
+                "Waiting for user confirmation for transfer: {}",
+                transfer_id
+            );
+
+            // Wait for user response (with timeout)
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(60), // 60 second timeout
+                rx,
+            )
+            .await
+            {
+                Ok(Ok(response)) => {
+                    eprintln!("User response for {}: {}", transfer_id, response);
+                    response
+                }
+                Ok(Err(_)) => {
+                    eprintln!("Channel closed for transfer: {}", transfer_id);
+                    false
+                }
+                Err(_) => {
+                    eprintln!("Timeout waiting for confirmation: {}", transfer_id);
+                    let _ = state.app_handle.emit("file-transfer-timeout", &transfer_id);
+                    false
+                }
             }
         };
 
@@ -459,4 +512,56 @@ async fn get_unique_filename(download_dir: &Path, filename: &str) -> String {
 
 async fn message_handler(State(state): State<ServerState>, Json(payload): Json<MessagePayload>) {
     let _ = state.app_handle.emit("message-received", payload);
+}
+
+async fn request_handler(
+    State(state): State<ServerState>,
+    Json(payload): Json<BatchTransferRequest>,
+) -> Json<serde_json::Value> {
+    eprintln!(
+        "Received batch transfer request: {} files from {} with session_id: {}",
+        payload.files.len(),
+        payload.sender_alias,
+        payload.session_id
+    );
+
+    let session_id = payload.session_id.clone();
+    let (tx, rx) = oneshot::channel();
+
+    // Store the sender in pending_transfers
+    {
+        let mut transfers = state.pending_transfers.transfers.lock().unwrap();
+        transfers.insert(session_id.clone(), tx);
+    }
+
+    // Emit event to frontend requesting confirmation for the whole batch
+    if let Err(e) = state.app_handle.emit("batch-transfer-request", &payload) {
+        eprintln!("Failed to emit batch-transfer-request: {}", e);
+        let mut transfers = state.pending_transfers.transfers.lock().unwrap();
+        transfers.remove(&session_id);
+        return Json(json!({ "accepted": false }));
+    }
+
+    // Wait for user response
+    let accepted = match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
+        Ok(Ok(response)) => {
+            eprintln!("Batch transfer {} response: {}", session_id, response);
+            response
+        },
+        _ => {
+            eprintln!("Batch transfer {} timed out or error", session_id);
+            // Clean up from transfers map if timeout or channel closed
+            let mut transfers = state.pending_transfers.transfers.lock().unwrap();
+            transfers.remove(&session_id);
+            false
+        }
+    };
+
+    if accepted {
+        let mut sessions = state.pending_transfers.authorized_sessions.lock().unwrap();
+        sessions.insert(session_id.clone(), true);
+        eprintln!("Session {} now authorized", session_id);
+    }
+
+    Json(json!({ "accepted": accepted }))
 }
