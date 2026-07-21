@@ -55,14 +55,14 @@ npm run tauri build
 
 ### Build for Android
 
-**⚠️ First-time setup**: Android APKs must be signed. See [ANDROID_SIGNING_QUICKSTART.md](ANDROID_SIGNING_QUICKSTART.md) for quick setup or [ANDROID_SIGNING_SETUP.md](ANDROID_SIGNING_SETUP.md) for detailed instructions.
+**⚠️ First-time setup**: Android APKs must be signed. See [ANDROID_SIGNING.md](ANDROID_SIGNING.md) for the full guide (current setup, CI, troubleshooting, backups, and production signing).
 
 ```bash
 # Initialize Android project (first time only)
 npm run tauri android init
 
 # Build signed APK
-npm run tauri android build --split-per-abi --apk true
+npm run tauri android build -- --split-per-abi --apk true
 ```
 
 With --split-per-abi
@@ -121,7 +121,7 @@ To use your production keystore in GitHub Actions, add these secrets to your rep
 - `ANDROID_KEY_PASSWORD` - Key password
 - `ANDROID_KEY_ALIAS` - Key alias
 
-See [ANDROID_SIGNING_SETUP.md](ANDROID_SIGNING_SETUP.md) for detailed instructions.
+See [ANDROID_SIGNING.md](ANDROID_SIGNING.md) for detailed instructions.
 
 ## Development
 

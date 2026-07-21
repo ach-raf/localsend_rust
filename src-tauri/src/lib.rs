@@ -4,7 +4,9 @@ mod server;
 mod transfer;
 
 use crate::config::{generate_anime_name, load_config, save_config, AppConfig};
-use crate::discovery::{refresh_discovery, register_service, start_discovery, update_alias};
+use crate::discovery::{
+    refresh_discovery, register_service, reregister_service_alias, start_discovery, update_alias,
+};
 use crate::server::start_server;
 use crate::transfer::{send_file, send_file_bytes, send_text};
 use mdns_sd::ServiceDaemon;
@@ -60,32 +62,32 @@ fn save_settings(
             old_alias, new_config.alias
         );
 
-        // First, explicitly unregister the old service by dropping the old daemon
-        {
-            let mut daemon_lock = state.service_daemon.lock().unwrap();
-            if let Some(old_daemon) = daemon_lock.take() {
-                eprintln!("Shutting down old mDNS service...");
-                // Explicitly shutdown the old daemon to unregister the service
-                if let Err(e) = old_daemon.shutdown() {
-                    eprintln!("Warning: Failed to shutdown old daemon: {}", e);
-                }
-                // Give time for the unregistration to propagate across the network
-                std::thread::sleep(std::time::Duration::from_millis(1000));
+        // Rename on the EXISTING registration daemon: announce the new alias,
+        // then goodbye the old one. We avoid `shutdown()` because it does NOT
+        // send an mDNS goodbye (only `unregister()` does), and we keep the same
+        // daemon alive instead of tearing it down + sleeping + recreating.
+        let renamed_existing = {
+            let daemon_lock = state.service_daemon.lock().unwrap();
+            if let Some(daemon) = daemon_lock.as_ref() {
+                reregister_service_alias(daemon, &old_alias, &new_config.alias, new_config.port)?;
+                true
+            } else {
+                false
             }
+        };
+
+        // Fallback: no live daemon (e.g. startup registration failed) — register fresh.
+        if !renamed_existing {
+            eprintln!(
+                "No live registration daemon; registering fresh service as '{}'",
+                new_config.alias
+            );
+            let daemon = register_service(&new_config.alias, new_config.port)?;
+            *state.service_daemon.lock().unwrap() = Some(daemon);
         }
 
-        // Now register the new service
-        eprintln!(
-            "Registering new mDNS service with alias '{}'...",
-            new_config.alias
-        );
-        let daemon = register_service(&new_config.alias, new_config.port)?;
-        *state.service_daemon.lock().unwrap() = Some(daemon);
-
-        // Update the discovery system with new alias
+        // Update the discovery self-filter and notify the frontend.
         update_alias(new_config.alias.clone())?;
-
-        // Emit event to frontend to update UI
         app.emit("alias-changed", new_config.alias.clone())
             .map_err(|e| e.to_string())?;
 
@@ -116,41 +118,41 @@ async fn send_file_bytes_to_peer(
 ) -> Result<(), String> {
     // If filename looks like an Android content URI ID (e.g., "msf_1000285299"),
     // try to infer a better name from file content
-    if file_name.starts_with("msf_") || file_name.starts_with("document_") {
-        if !file_name.contains('.') {
-            // Check for APK signature first (ZIP with AndroidManifest.xml)
-            // APKs start with PK (ZIP) but contain specific files
-            let is_apk = if file_data.len() > 30 {
-                // Check if it's a ZIP and look for APK-specific indicators
-                file_data.starts_with(&[0x50, 0x4B, 0x03, 0x04]) // PK ZIP signature
-                    && (
-                        // Look for AndroidManifest in the file data (simple heuristic)
-                        String::from_utf8_lossy(&file_data[..file_data.len().min(8192)])
-                            .contains("AndroidManifest")
-                    )
-            } else {
-                false
-            };
+    if (file_name.starts_with("msf_") || file_name.starts_with("document_"))
+        && !file_name.contains('.')
+    {
+        // Check for APK signature first (ZIP with AndroidManifest.xml)
+        // APKs start with PK (ZIP) but contain specific files
+        let is_apk = if file_data.len() > 30 {
+            // Check if it's a ZIP and look for APK-specific indicators
+            file_data.starts_with(&[0x50, 0x4B, 0x03, 0x04]) // PK ZIP signature
+                && (
+                    // Look for AndroidManifest in the file data (simple heuristic)
+                    String::from_utf8_lossy(&file_data[..file_data.len().min(8192)])
+                        .contains("AndroidManifest")
+                )
+        } else {
+            false
+        };
 
-            if is_apk {
-                file_name = format!("app.apk");
-                eprintln!("Detected APK file, using filename: {}", file_name);
-            } else if let Some(kind) = infer::get(&file_data) {
-                let ext = kind.extension();
-                eprintln!("Inferred extension for {}: .{}", file_name, ext);
-                // For common types, use a generic but descriptive name
-                let mime_type = kind.mime_type();
-                file_name = match mime_type {
-                    s if s.starts_with("image/") => format!("image.{}", ext),
-                    s if s.starts_with("video/") => format!("video.{}", ext),
-                    s if s.starts_with("audio/") => format!("audio.{}", ext),
-                    "application/pdf" => format!("document.{}", ext),
-                    "application/vnd.android.package-archive" => format!("app.apk"),
-                    "application/zip" => format!("archive.{}", ext),
-                    _ => format!("file.{}", ext),
-                };
-                eprintln!("Using inferred filename: {}", file_name);
-            }
+        if is_apk {
+            file_name = "app.apk".to_string();
+            eprintln!("Detected APK file, using filename: {}", file_name);
+        } else if let Some(kind) = infer::get(&file_data) {
+            let ext = kind.extension();
+            eprintln!("Inferred extension for {}: .{}", file_name, ext);
+            // For common types, use a generic but descriptive name
+            let mime_type = kind.mime_type();
+            file_name = match mime_type {
+                s if s.starts_with("image/") => format!("image.{}", ext),
+                s if s.starts_with("video/") => format!("video.{}", ext),
+                s if s.starts_with("audio/") => format!("audio.{}", ext),
+                "application/pdf" => format!("document.{}", ext),
+                "application/vnd.android.package-archive" => "app.apk".to_string(),
+                "application/zip" => format!("archive.{}", ext),
+                _ => format!("file.{}", ext),
+            };
+            eprintln!("Using inferred filename: {}", file_name);
         }
     }
 
@@ -180,39 +182,14 @@ async fn send_text_to_peer(
 }
 
 #[tauri::command]
-fn refresh_peers(state: State<'_, AppState>) -> Result<(), String> {
-    eprintln!("Refresh peers command called - re-registering service and refreshing discovery");
-
-    // Get current config
-    let config = state.config.lock().unwrap();
-    let alias = config.alias.clone();
-    let port = config.port;
-    drop(config); // Release lock before doing heavy operations
-
-    // Re-register the service to broadcast our presence again
-    // This ensures other clients can discover this client
-    {
-        let mut daemon_lock = state.service_daemon.lock().unwrap();
-        if let Some(old_daemon) = daemon_lock.take() {
-            eprintln!("Shutting down old mDNS service for refresh...");
-            if let Err(e) = old_daemon.shutdown() {
-                eprintln!("Warning: Failed to shutdown old daemon: {}", e);
-            }
-            // Give time for the unregistration to propagate
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
-    }
-
-    // Register the service again to broadcast our presence
-    eprintln!("Re-registering mDNS service with alias '{}'...", alias);
-    let daemon = register_service(&alias, port)?;
-    *state.service_daemon.lock().unwrap() = Some(daemon);
-
-    // Refresh discovery to restart the browse daemon
-    refresh_discovery()?;
-
-    eprintln!("Service re-registered and discovery refreshed successfully!");
-    Ok(())
+fn refresh_peers() -> Result<(), String> {
+    eprintln!("Refresh peers command called - re-querying mDNS");
+    // Non-destructive refresh: just re-send the discovery query so peers
+    // re-announce immediately. The registered service (kept alive in
+    // AppState.service_daemon) continues to announce us via its TTL — tearing it
+    // down and re-registering here made OTHER devices briefly see our service
+    // flash off/on every time the app started or the button was clicked.
+    refresh_discovery()
 }
 
 #[tauri::command]
@@ -377,7 +354,7 @@ fn open_file_location(file_path: String) -> Result<(), String> {
                 .ok_or_else(|| "Invalid path encoding".to_string())?;
 
             Command::new("explorer.exe")
-                .args(&["/select,", file_path_str])
+                .args(["/select,", file_path_str])
                 .spawn()
                 .map_err(|e| format!("Failed to open file location: {}", e))?;
         } else {

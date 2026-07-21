@@ -186,7 +186,7 @@ export default function Home() {
           id: transfer_id,
           title: "File Received",
           message: messageContent,
-          color: "green",
+          color: "phosphor",
           loading: false,
           autoClose: 10000, // Close after 10 seconds, even if button is available
         });
@@ -371,7 +371,7 @@ export default function Home() {
                 id: notificationId,
                 title: "Sent",
                 message: `Successfully sent ${fileName}`,
-                color: "green",
+                color: "phosphor",
                 loading: false,
                 autoClose: 2000,
               });
@@ -567,7 +567,7 @@ export default function Home() {
             id: notificationId,
             title: "Sent",
             message: `Successfully sent ${fileName}`,
-            color: "green",
+            color: "phosphor",
             loading: false,
             autoClose: 2000,
           });
@@ -607,7 +607,7 @@ export default function Home() {
       notifications.show({
         title: "Sent",
         message: "Message sent",
-        color: "green",
+        color: "phosphor",
       });
       setMessage("");
     } catch (e) {
@@ -628,7 +628,7 @@ export default function Home() {
       notifications.show({
         title: "Discovery Refreshed",
         message: "Searching for nearby peers...",
-        color: "blue",
+        color: "phosphor",
         autoClose: 2000,
       });
     } catch (e) {
@@ -712,26 +712,7 @@ export default function Home() {
               selectedPeer ? "hidden sm:block" : "relative sm:relative"
             }
           >
-            <Paper
-              shadow="md"
-              p={{ base: "sm", sm: "lg" }}
-              withBorder
-              h="100%"
-              className="peers-panel-paper rounded-xl"
-              style={{
-                background: "var(--bg)",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "12px",
-                boxShadow: "var(--shadow-m)",
-                transition: "var(--transition-normal)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = "var(--shadow-l)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = "var(--shadow-m)";
-              }}
-            >
+            <Paper p={{ base: "sm", sm: "lg" }} h="100%" className="peers-panel-paper">
               <Group
                 justify="space-between"
                 mb="lg"
@@ -744,35 +725,11 @@ export default function Home() {
                 <Tooltip label="Refresh discovery">
                   <ActionIcon
                     variant="light"
-                    color="blue"
+                    color="phosphor"
                     onClick={handleRefreshPeers}
                     loading={refreshing}
                     size="xl"
-                    className="responsive-icon-button text-text-primary"
-                    style={{
-                      width: "44px",
-                      height: "44px",
-                      background:
-                        "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
-                      border: "1px solid var(--border-subtle)",
-                      borderRadius: "8px",
-                      boxShadow: "var(--shadow-s)",
-                      transition: "var(--transition-fast)",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!refreshing) {
-                        e.currentTarget.style.transform = "translateY(-1px)";
-                        e.currentTarget.style.boxShadow = "var(--shadow-m)";
-                        e.currentTarget.style.background =
-                          "linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter))";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = "translateY(0)";
-                      e.currentTarget.style.boxShadow = "var(--shadow-s)";
-                      e.currentTarget.style.background =
-                        "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))";
-                    }}
+                    className="responsive-icon-button"
                   >
                     <IconRefresh
                       size={24}
@@ -784,27 +741,17 @@ export default function Home() {
               </Group>
 
               {peers.length === 0 ? (
-                <div className="responsive-empty-state bg-bg-dark border border-border-subtle rounded-xl flex flex-col items-center justify-center gap-3 text-center p-[clamp(1rem,3vw,2rem)] min-h-[min(200px,40vh)]">
-                  <ThemeIcon
-                    size={64}
-                    variant="light"
-                    color="gray"
-                    radius="xl"
-                    className="responsive-theme-icon"
-                  >
-                    <IconDeviceDesktop
-                      size={36}
-                      className="responsive-icon-large"
-                    />
-                  </ThemeIcon>
-                  <div>
-                    <Text fw={500} mb="xs" className="responsive-text-md">
-                      No peers found
-                    </Text>
-                    <Text c="dimmed" className="responsive-text-sm">
-                      Open the app on another device
-                    </Text>
+                <div className="empty-listen">
+                  <div className="signal">
+                    <i></i>
+                    <i></i>
+                    <i></i>
                   </div>
+                  <h4>Listening for nearby devices</h4>
+                  <p>
+                    Waiting for devices on your network. Open Local Share on
+                    another machine or phone.
+                  </p>
                 </div>
               ) : (
                 <Stack gap="sm">
@@ -815,20 +762,6 @@ export default function Home() {
                         selectedPeer?.ip === peer.ip ? "selected" : ""
                       }`}
                       onClick={() => setSelectedPeer(peer)}
-                      style={{
-                        background:
-                          selectedPeer?.ip === peer.ip
-                            ? "var(--bg-light)"
-                            : "var(--bg)",
-                        border:
-                          selectedPeer?.ip === peer.ip
-                            ? "2px solid var(--accent-primary)"
-                            : "1px solid var(--border-subtle)",
-                        boxShadow:
-                          selectedPeer?.ip === peer.ip
-                            ? "var(--shadow-m)"
-                            : "var(--shadow-s)",
-                      }}
                     >
                       <Group
                         gap="md"
@@ -840,15 +773,20 @@ export default function Home() {
                           <ThemeIcon
                             size={48}
                             variant="light"
-                            color="blue"
+                            color="phosphor"
                             radius="md"
                             className="responsive-peer-icon"
                           >
                             <IconDeviceDesktop size={24} />
                           </ThemeIcon>
                           <div
-                            className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-green-500 border-2 border-bg"
-                            style={{ zIndex: 10 }}
+                            className="absolute -top-1 -right-1 w-3 h-3 rounded-full"
+                            style={{
+                              zIndex: 10,
+                              background: "var(--accent-success)",
+                              boxShadow:
+                                "0 0 0 3px color-mix(in oklch, var(--accent-success) 22%, transparent), 0 0 8px color-mix(in oklch, var(--accent-success) 55%, transparent)",
+                            }}
                           />
                         </div>
                         <div
@@ -867,11 +805,8 @@ export default function Home() {
                           <Text
                             size="xs"
                             c="dimmed"
-                            className="responsive-peer-ip"
-                            style={{
-                              fontFamily: "monospace",
-                              marginTop: "0.25rem",
-                            }}
+                            className="responsive-peer-ip t-mono"
+                            style={{ marginTop: "0.25rem" }}
                           >
                             {peer.ip}
                           </Text>
@@ -892,25 +827,7 @@ export default function Home() {
             }
           >
             {selectedPeer ? (
-              <Paper
-                shadow="md"
-                p={{ base: "sm", sm: "lg" }}
-                withBorder
-                className="send-panel-paper rounded-xl"
-                style={{
-                  background: "var(--bg)",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: "12px",
-                  boxShadow: "var(--shadow-m)",
-                  transition: "var(--transition-normal)",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = "var(--shadow-l)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "var(--shadow-m)";
-                }}
-              >
+              <Paper p={{ base: "sm", sm: "lg" }} className="send-panel-paper">
                 <Group
                   justify="space-between"
                   mb="lg"
@@ -935,29 +852,7 @@ export default function Home() {
                       color="gray"
                       onClick={() => setSelectedPeer(null)}
                       size="xl"
-                      className="mobile-hide-close-button text-text-primary flex-shrink-0"
-                      style={{
-                        width: "44px",
-                        height: "44px",
-                        background:
-                          "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
-                        border: "1px solid var(--border-subtle)",
-                        borderRadius: "8px",
-                        boxShadow: "var(--shadow-s)",
-                        transition: "var(--transition-fast)",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = "translateY(-1px)";
-                        e.currentTarget.style.boxShadow = "var(--shadow-m)";
-                        e.currentTarget.style.background =
-                          "linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter))";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = "translateY(0)";
-                        e.currentTarget.style.boxShadow = "var(--shadow-s)";
-                        e.currentTarget.style.background =
-                          "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))";
-                      }}
+                      className="mobile-hide-close-button flex-shrink-0"
                     >
                       <IconX size={24} stroke={2} />
                     </ActionIcon>
@@ -1009,7 +904,7 @@ export default function Home() {
                       >
                         <IconUpload
                           size={24}
-                          color="white"
+                          color="var(--on-accent)"
                           stroke={2}
                           className="responsive-upload-icon"
                         />
@@ -1043,26 +938,6 @@ export default function Home() {
                         loading={sending}
                         size="lg"
                         className="depth-button-primary responsive-button min-w-[clamp(160px,40vw,200px)] h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
-                        style={{
-                          background:
-                            "linear-gradient(to bottom, var(--accent-primary-light), var(--accent-primary))",
-                          border: "1px solid var(--accent-primary-dark)",
-                          color: "white",
-                          fontWeight: 600,
-                          boxShadow: "var(--shadow-m)",
-                          transition: "var(--transition-normal)",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!sending) {
-                            e.currentTarget.style.transform =
-                              "translateY(-2px)";
-                            e.currentTarget.style.boxShadow = "var(--shadow-l)";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = "translateY(0)";
-                          e.currentTarget.style.boxShadow = "var(--shadow-m)";
-                        }}
                       >
                         Select Files
                       </Button>
@@ -1106,7 +981,7 @@ export default function Home() {
                         <Tooltip label="Paste from clipboard">
                           <ActionIcon
                             variant="light"
-                            color="blue"
+                            color="phosphor"
                             onClick={async () => {
                               try {
                                 const clipboardText = await readText();
@@ -1115,7 +990,7 @@ export default function Home() {
                                   notifications.show({
                                     title: "Pasted",
                                     message: "Content pasted from clipboard",
-                                    color: "green",
+                                    color: "phosphor",
                                     autoClose: 2000,
                                   });
                                 } else {
@@ -1135,31 +1010,8 @@ export default function Home() {
                               }
                             }}
                             size="lg"
-                            className="absolute top-2 right-2 text-text-primary"
-                            style={{
-                              zIndex: 10,
-                              background:
-                                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
-                              border: "1px solid var(--border-subtle)",
-                              borderRadius: "8px",
-                              boxShadow: "var(--shadow-s)",
-                              transition: "var(--transition-fast)",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.transform =
-                                "translateY(-1px)";
-                              e.currentTarget.style.boxShadow =
-                                "var(--shadow-m)";
-                              e.currentTarget.style.background =
-                                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter))";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.transform = "translateY(0)";
-                              e.currentTarget.style.boxShadow =
-                                "var(--shadow-s)";
-                              e.currentTarget.style.background =
-                                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))";
-                            }}
+                            className="absolute top-2 right-2"
+                            style={{ zIndex: 10 }}
                           >
                             <IconClipboard
                               size={18}
@@ -1175,26 +1027,6 @@ export default function Home() {
                         disabled={!message.trim()}
                         size="lg"
                         className="depth-button-primary responsive-button h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
-                        style={{
-                          background:
-                            "linear-gradient(to bottom, var(--accent-primary-light), var(--accent-primary))",
-                          border: "1px solid var(--accent-primary-dark)",
-                          color: "white",
-                          fontWeight: 600,
-                          boxShadow: "var(--shadow-m)",
-                          transition: "var(--transition-normal)",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!sending && message.trim()) {
-                            e.currentTarget.style.transform =
-                              "translateY(-2px)";
-                            e.currentTarget.style.boxShadow = "var(--shadow-l)";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = "translateY(0)";
-                          e.currentTarget.style.boxShadow = "var(--shadow-m)";
-                        }}
                         fullWidth
                       >
                         Send Message
@@ -1205,37 +1037,16 @@ export default function Home() {
               </Paper>
             ) : (
               <Paper
-                shadow="md"
                 p={{ base: "md", sm: "xl" }}
-                withBorder
                 h="100%"
-                className="empty-state-panel rounded-xl flex flex-col items-center justify-center gap-4"
-                style={{
-                  background: "var(--bg-dark)",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: "12px",
-                  boxShadow: "var(--shadow-inset)",
-                }}
+                className="empty-state-panel flex flex-col items-center justify-center"
               >
-                <ThemeIcon
-                  size={80}
-                  variant="light"
-                  color="gray"
-                  radius="xl"
-                  className="responsive-theme-icon"
-                >
-                  <IconDeviceDesktop
-                    size={44}
-                    className="responsive-icon-large"
-                  />
-                </ThemeIcon>
-                <div style={{ textAlign: "center", padding: "0 1rem" }}>
-                  <Text fw={500} mb="xs" className="responsive-text-xl">
-                    Select a peer to start sharing
-                  </Text>
-                  <Text c="dimmed" className="responsive-text-sm">
-                    Choose a device from the nearby peers list
-                  </Text>
+                <div className="empty-pick">
+                  <div className="gl">
+                    <IconDeviceDesktop size={22} />
+                  </div>
+                  <h4>Pick a device to start</h4>
+                  <p>Choose a device from the nearby peers list.</p>
                 </div>
               </Paper>
             )}

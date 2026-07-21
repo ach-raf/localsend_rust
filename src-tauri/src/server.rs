@@ -151,10 +151,7 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
             .unwrap_or_else(|_| raw_file_name.clone());
 
         // Sanitize filename to remove problematic characters (like :)
-        let mut sanitized_name = file_name
-            .replace(':', "_")
-            .replace('/', "_")
-            .replace('\\', "_");
+        let mut sanitized_name = file_name.replace([':', '/', '\\'], "_");
 
         eprintln!(
             "Receiving file: {} (original: {})",

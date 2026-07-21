@@ -43,17 +43,11 @@ export default function FileTransferConfirmModal({
       onClose={handleReject}
       title={
         <div>
-          <Text size="sm" c="dimmed" tt="uppercase" fw={600}>
-            Incoming Transfer
-          </Text>
-          <Text
-            fw={700}
-            size="1.5rem"
-            style={{
-              color: "var(--text-primary)",
-            }}
-          >
-            {totalFiles > 1 ? `${totalFiles} Files Request` : "File Request"}
+          <div className="t-mono text-[0.7rem] tracking-[0.1em] uppercase text-text-tertiary">
+            Incoming transfer
+          </div>
+          <Text fw={700} size="1.5rem" className="t-display text-text-primary">
+            {totalFiles > 1 ? `${totalFiles} files` : "File request"}
           </Text>
         </div>
       }
@@ -63,18 +57,17 @@ export default function FileTransferConfirmModal({
       closeOnEscape={false}
       withCloseButton={false}
       size="md"
-      overlayProps={{
-        backgroundOpacity: 0.75,
-      }}
+      overlayProps={{ backgroundOpacity: 0.75 }}
       styles={{
         header: {
           background: "linear-gradient(to bottom, var(--bg-light), var(--bg))",
           borderBottom: "1px solid var(--border-subtle)",
           padding: "clamp(1rem, 4vw, 1.5rem)",
-          boxShadow: "inset 0 1px 2px oklch(0.4 0 0 / 0.15)",
+          boxShadow: "inset 0 1px 2px oklch(0.6 0.02 150 / 0.15)",
         },
         content: {
           backgroundColor: "var(--bg-light)",
+          backgroundImage: "var(--brushed-soft)",
           border: "1px solid var(--border-subtle)",
           maxWidth: "min(90vw, 500px)",
           boxShadow: "var(--shadow-l)",
@@ -86,7 +79,6 @@ export default function FileTransferConfirmModal({
       }}
     >
       <Stack gap="xl">
-        {/* Icon and question - centered on mobile */}
         <Stack gap="md" align="center">
           <div
             style={{
@@ -98,32 +90,34 @@ export default function FileTransferConfirmModal({
               alignItems: "center",
               justifyContent: "center",
               boxShadow: "var(--shadow-m)",
+              color: "var(--on-accent)",
             }}
           >
-            <IconFileDownload size={48} color="white" stroke={2.5} />
+            <IconFileDownload size={48} stroke={2.5} />
           </div>
           <Text
             size="clamp(1.1rem, 4vw, 1.25rem)"
             fw={600}
             ta="center"
+            className="t-display"
             style={{ lineHeight: "1.4" }}
           >
             {totalFiles > 1
-              ? `Do you want to accept these ${totalFiles} files?`
-              : "Do you want to accept this file?"}
+              ? `Accept these ${totalFiles} files?`
+              : "Accept this file?"}
           </Text>
           {totalFiles > 1 && (
-            <Text size="sm" c="dimmed">
-              Total size: {formatFileSize(totalSize)}
+            <Text size="sm" c="dimmed" className="t-mono">
+              Total {formatFileSize(totalSize)}
             </Text>
           )}
         </Stack>
 
-        {/* File information - prominent display */}
         <div
           style={{
-            padding: "clamp(1rem, 4vw, 1.25rem)",
+            padding: "clamp(0.75rem, 3vw, 1rem)",
             backgroundColor: "var(--bg)",
+            backgroundImage: "var(--brushed)",
             borderRadius: "12px",
             border: "1px solid var(--border-subtle)",
             boxShadow: "var(--shadow-inset)",
@@ -136,7 +130,7 @@ export default function FileTransferConfirmModal({
               <Group key={index} gap="sm" align="flex-start" wrap="nowrap">
                 <IconFile
                   size={20}
-                  color="var(--accent-primary-light)"
+                  color="var(--accent-primary)"
                   style={{ flexShrink: 0, marginTop: "2px" }}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -153,7 +147,7 @@ export default function FileTransferConfirmModal({
                     {file.name}
                   </Text>
                   {file.size !== undefined && (
-                    <Text size="xs" c="dimmed">
+                    <Text size="xs" c="dimmed" className="t-mono">
                       {formatFileSize(file.size)}
                     </Text>
                   )}
@@ -163,34 +157,15 @@ export default function FileTransferConfirmModal({
           </Stack>
         </div>
 
-        {/* Action buttons */}
         <Stack gap="sm">
           <Button
             onClick={handleAccept}
             size="lg"
             fullWidth
             className="depth-button-primary"
-            style={{
-              background:
-                "linear-gradient(to bottom, oklch(0.7 0.18 145), var(--accent-success))",
-              border: "1px solid oklch(0.6 0.18 145)",
-              color: "white",
-              fontWeight: 600,
-              height: "clamp(52px, 12vw, 56px)",
-              fontSize: "clamp(1rem, 4vw, 1.15rem)",
-              boxShadow: "var(--shadow-m)",
-              transition: "var(--transition-normal)",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-2px)";
-              e.currentTarget.style.boxShadow = "var(--shadow-l)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow = "var(--shadow-m)";
-            }}
+            style={{ height: "clamp(52px, 12vw, 56px)" }}
           >
-            Accept Transfer
+            Accept transfer
           </Button>
           <Button
             variant="light"
@@ -198,28 +173,7 @@ export default function FileTransferConfirmModal({
             size="lg"
             fullWidth
             className="depth-button-secondary"
-            style={{
-              background:
-                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))",
-              border: "1px solid var(--border-subtle)",
-              color: "var(--text-secondary)",
-              height: "clamp(48px, 11vw, 52px)",
-              fontSize: "clamp(0.95rem, 3.5vw, 1.15rem)",
-              boxShadow: "var(--shadow-s)",
-              transition: "var(--transition-normal)",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-1px)";
-              e.currentTarget.style.boxShadow = "var(--shadow-m)";
-              e.currentTarget.style.background =
-                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter))";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow = "var(--shadow-s)";
-              e.currentTarget.style.background =
-                "linear-gradient(to bottom, var(--bg-lighter), var(--bg-light))";
-            }}
+            style={{ height: "clamp(48px, 11vw, 52px)" }}
           >
             Reject
           </Button>

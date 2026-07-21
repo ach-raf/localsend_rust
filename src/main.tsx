@@ -9,13 +9,11 @@ import "@mantine/notifications/styles.css";
 import "./App.css";
 
 const theme = createTheme({
-  // Enhanced theme following depth design principles
-  fontFamily:
-    "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-  fontFamilyMonospace: "'Fira Code', 'Consolas', monospace",
+  // Depth System v2 — Obsidian + Phosphor · Space Grotesk + Inter + Fira Code
+  fontFamily: "var(--font-body)",
+  fontFamilyMonospace: "var(--font-mono)",
   headings: {
-    fontFamily:
-      "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    fontFamily: "var(--font-display)",
     fontWeight: "700",
     sizes: {
       h1: { fontSize: "2.5rem", lineHeight: "1.2" },
@@ -24,9 +22,23 @@ const theme = createTheme({
       h4: { fontSize: "1.25rem", lineHeight: "1.4" },
     },
   },
-  primaryColor: "blue",
+  primaryColor: "phosphor",
   defaultRadius: "md",
   cursorType: "pointer",
+  colors: {
+    phosphor: [
+      "oklch(0.95 0.05 145)",
+      "oklch(0.9 0.1 145)",
+      "oklch(0.86 0.12 145)",
+      "oklch(0.82 0.14 145)",
+      "oklch(0.8 0.15 145)",
+      "oklch(0.78 0.17 145)",
+      "oklch(0.7 0.17 145)",
+      "oklch(0.62 0.17 145)",
+      "oklch(0.55 0.16 145)",
+      "oklch(0.45 0.15 145)",
+    ],
+  },
   spacing: {
     xs: "0.5rem",
     sm: "0.75rem",
@@ -35,11 +47,11 @@ const theme = createTheme({
     xl: "2rem",
   },
   shadows: {
-    xs: "0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.15)",
-    sm: "0 2px 4px rgba(0, 0, 0, 0.4), 0 4px 8px rgba(0, 0, 0, 0.2)",
-    md: "0 2px 4px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.3)",
-    lg: "0 4px 8px rgba(0, 0, 0, 0.7), 0 8px 24px rgba(0, 0, 0, 0.4)",
-    xl: "0 8px 16px rgba(0, 0, 0, 0.8), 0 12px 32px rgba(0, 0, 0, 0.5)",
+    xs: "var(--shadow-s)",
+    sm: "var(--shadow-s)",
+    md: "var(--shadow-m)",
+    lg: "var(--shadow-l)",
+    xl: "var(--shadow-l)",
   },
   radius: {
     xs: "4px",

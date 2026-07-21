@@ -2,73 +2,94 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ============================================
-   DEPTH SYSTEM - Dark Theme Design Tokens
-   ============================================ */
+/* ============================================================
+   Local Share · Depth System v2
+   Palette: Obsidian + Phosphor · Texture: brushed steel
+   Type: Space Grotesk (display) + Inter (body) + Fira Code (mono)
+   Every interactive state is CSS-driven (:hover/:active/:focus-visible).
+   No inline style mutation, no JS hover handlers.
+   ============================================================ */
 
 :root {
-  /* --- Color Layers (oklch color space) --- */
-  --bg-darkest: oklch(0.12 0.02 264); /* Furthest - Page Background */
-  --bg-dark: oklch(0.16 0.02 264); /* Far - Recessed elements */
-  --bg: oklch(0.2 0.02 264); /* Middle - Card Backgrounds */
-  --bg-light: oklch(0.26 0.02 264); /* Close - Interactive Elements */
-  --bg-lighter: oklch(0.32 0.02 264); /* Closest - Hover states */
+  /* --- Obsidian elevation ramp (cool graphite, low chroma — not slate) --- */
+  --bg-darkest: oklch(0.115 0.012 264);
+  --bg-dark: oklch(0.15 0.012 264);
+  --bg: oklch(0.188 0.014 264);
+  --bg-light: oklch(0.242 0.015 264);
+  --bg-lighter: oklch(0.3 0.016 264);
 
-  /* --- Accent Colors --- */
-  --accent-primary: oklch(0.65 0.2 250); /* Blue accent */
-  --accent-primary-dark: oklch(0.55 0.2 250);
-  --accent-primary-light: oklch(0.75 0.2 250);
-  --accent-success: oklch(0.65 0.18 145); /* Green */
-  --accent-warning: oklch(0.7 0.16 85); /* Yellow/Orange */
-  --accent-danger: oklch(0.6 0.2 25); /* Red */
+  /* --- Phosphor accent (green) --- */
+  --accent-primary: oklch(0.78 0.17 145);
+  --accent-primary-dark: oklch(0.66 0.16 145);
+  --accent-primary-light: oklch(0.88 0.13 145);
+  --accent-success: oklch(0.72 0.17 145);
+  --accent-warning: oklch(0.78 0.14 85);
+  --accent-danger: oklch(0.64 0.21 25);
+  --on-accent: oklch(0.16 0.04 145); /* dark ink on the bright phosphor */
 
-  /* --- Text Colors --- */
-  --text-primary: oklch(0.95 0 0);
-  --text-secondary: oklch(0.7 0 0);
-  --text-tertiary: oklch(0.5 0 0);
+  /* --- Text --- */
+  --text-primary: oklch(0.96 0.004 145);
+  --text-secondary: oklch(0.72 0.012 150);
+  --text-tertiary: oklch(0.5 0.012 264);
 
-  /* --- Border Colors --- */
-  --border-subtle: oklch(0.28 0.02 264);
-  --border-strong: oklch(0.35 0.02 264);
+  /* --- Borders --- */
+  --border-subtle: oklch(0.26 0.015 264);
+  --border-strong: oklch(0.34 0.016 264);
 
-  /* --- Shadow Levels --- */
-  --shadow-s: inset 0 1px 1px oklch(0.4 0 0 / 0.15),
-    0 1px 2px oklch(0.05 0 0 / 0.5), 0 2px 4px oklch(0.05 0 0 / 0.25);
-  --shadow-m: inset 0 1px 2px oklch(0.4 0 0 / 0.2),
-    0 2px 4px oklch(0.05 0 0 / 0.6), 0 4px 12px oklch(0.05 0 0 / 0.3);
-  --shadow-l: inset 0 2px 3px oklch(0.4 0 0 / 0.25),
-    0 4px 8px oklch(0.05 0 0 / 0.7), 0 8px 24px oklch(0.05 0 0 / 0.4);
-  --shadow-inset: inset 0 2px 4px oklch(0.05 0 0 / 0.5),
-    inset 0 -1px 2px oklch(0.3 0 0 / 0.1);
+  /* --- Composite shadows (inset top-highlight + sharp edge + ambient) --- */
+  --shadow-s: inset 0 1px 1px oklch(0.6 0.02 150 / 0.2),
+    0 1px 2px oklch(0.02 0 0 / 0.55), 0 2px 4px oklch(0.02 0 0 / 0.28);
+  --shadow-m: inset 0 1px 2px oklch(0.6 0.02 150 / 0.24),
+    0 2px 4px oklch(0.02 0 0 / 0.6), 0 4px 12px oklch(0.02 0 0 / 0.32);
+  --shadow-l: inset 0 2px 3px oklch(0.62 0.02 150 / 0.26),
+    0 4px 8px oklch(0.02 0 0 / 0.65), 0 8px 24px oklch(0.02 0 0 / 0.42);
+  --shadow-inset: inset 0 2px 4px oklch(0.02 0 0 / 0.5),
+    inset 0 -1px 2px oklch(0.34 0.015 264 / 0.12);
+
+  /* --- Brushed-steel texture (the "not too clean" surface) --- */
+  --brushed: repeating-linear-gradient(
+    135deg,
+    oklch(1 0 0 / 0.028) 0 1px,
+    oklch(0 0 0 / 0.02) 1px 2px,
+    transparent 2px 4px
+  );
+  --brushed-soft: repeating-linear-gradient(
+    135deg,
+    oklch(1 0 0 / 0.016) 0 1px,
+    transparent 1px 3px
+  );
+
+  /* --- Type voices --- */
+  --font-display: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Fira Code", "Consolas", ui-monospace, monospace;
+
+  /* --- Radii --- */
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-pill: 999px;
 
   /* --- Transitions --- */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
-}
 
-/* ============================================
-   BASE STYLES
-   ============================================ */
-
-* {
-  box-sizing: border-box;
-}
-
-:root {
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
-    "Oxygen", "Ubuntu", "Cantarell", sans-serif;
-  font-size: 18px;
-  line-height: 1.6;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.55;
   font-weight: 400;
   color: var(--text-primary);
   background-color: var(--bg-darkest);
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
@@ -103,8 +124,21 @@ body {
   }
 }
 
+@keyframes ripple {
+  0% {
+    width: 10px;
+    height: 10px;
+    opacity: 0.6;
+  }
+  100% {
+    width: 46px;
+    height: 46px;
+    opacity: 0;
+  }
+}
+
 /* ============================================
-   SCROLLBAR STYLING
+   SCROLLBAR
    ============================================ */
 
 ::-webkit-scrollbar {
@@ -118,14 +152,15 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, var(--bg-light), var(--bg));
+  background-color: var(--bg-light);
+  background-image: var(--brushed);
   border-radius: 6px;
   border: 2px solid var(--bg-dark);
   box-shadow: var(--shadow-s);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, var(--bg-lighter), var(--bg-light));
+  background-color: var(--bg-lighter);
 }
 
 /* ============================================
@@ -149,52 +184,25 @@ body {
 }
 
 /* ============================================
-   MOBILE LAYOUT FIXES
+   MOBILE LAYOUT
    ============================================ */
 
-/* On mobile, ensure send panel appears in same grid position as peer list */
 @media (max-width: 640px) {
-  /* Both columns span 12 on mobile, so they naturally occupy the same position */
-  /* Add smooth transition when switching */
-  .send-panel-paper {
-    animation: fadeInSlide 0.25s ease-out;
-  }
-
+  .send-panel-paper,
   .peers-panel-paper {
-    animation: fadeInSlide 0.25s ease-out;
+    animation: fadeIn 0.25s ease-out;
   }
 
-  @keyframes fadeInSlide {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  /* Reduce container padding on mobile for wider content */
   [data-mantine-component="Container"] {
     padding-left: 0.5rem !important;
     padding-right: 0.5rem !important;
   }
 
-  /* Ensure Grid uses minimal gutter on mobile */
   [data-mantine-component="Grid"] {
     gap: 0.5rem !important;
   }
-
-  /* Keep fixed height on mobile to prevent container movement */
-  /* Upload area will fill the fixed panel height */
 }
 
-/* ============================================
-   BUTTON ALIGNMENT FIXES
-   ============================================ */
-
-/* Ensure back and close buttons are properly sized and aligned */
 .mobile-back-button,
 .mobile-hide-close-button {
   min-width: 44px !important;
@@ -204,188 +212,19 @@ body {
   justify-content: center !important;
 }
 
-/* Responsive sizing for mobile */
 @media (max-width: 640px) {
   .mobile-back-button,
   .mobile-hide-close-button {
     width: 48px !important;
     height: 48px !important;
   }
-
-  .mobile-back-button svg,
-  .mobile-hide-close-button svg {
-    width: 26px !important;
-    height: 26px !important;
-  }
 }
 
-/* Desktop sizing */
-@media (min-width: 641px) {
-  .mobile-back-button,
-  .mobile-hide-close-button {
-    width: 44px !important;
-    height: 44px !important;
-  }
-
-  .mobile-back-button svg,
-  .mobile-hide-close-button svg {
-    width: 24px !important;
-    height: 24px !important;
-  }
-}
-
-/* ============================================
-   DEPTH SYSTEM - BUTTON UTILITIES
-   ============================================ */
-
-.depth-button-primary {
-  position: relative;
-  overflow: hidden;
-}
-
-.depth-button-primary::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent);
-  pointer-events: none;
-  border-radius: inherit;
-}
-
-.depth-button-primary:active {
-  transform: translateY(0) !important;
-  box-shadow: var(--shadow-s) !important;
-}
-
-.depth-button-secondary {
-  position: relative;
-  overflow: hidden;
-}
-
-.depth-button-secondary::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(to bottom, oklch(1 0 0 / 0.1), transparent);
-  pointer-events: none;
-  border-radius: inherit;
-}
-
-.depth-button-secondary:active {
-  transform: translateY(0) !important;
-  box-shadow: var(--shadow-inset) !important;
-}
-
-/* ============================================
-   DEPTH SYSTEM - CARD UTILITIES
-   ============================================ */
-
-.depth-card {
-  background: var(--bg);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  box-shadow: var(--shadow-s);
-  transition: var(--transition-normal);
-}
-
-.depth-card:hover {
-  box-shadow: var(--shadow-m);
-}
-
-.depth-card-elevated {
-  background: var(--bg-light);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  box-shadow: var(--shadow-m);
-  transition: var(--transition-normal);
-}
-
-.depth-card-elevated:hover {
-  box-shadow: var(--shadow-l);
-  transform: translateY(-2px);
-}
-
-/* ============================================
-   DEPTH SYSTEM - INTERACTIVE ELEMENTS
-   ============================================ */
-
-/* Action icons with depth */
-[data-mantine-component="ActionIcon"] {
-  transition: var(--transition-fast);
-}
-
-[data-mantine-component="ActionIcon"]:hover {
-  transform: translateY(-1px);
-}
-
-[data-mantine-component="ActionIcon"]:active {
-  transform: translateY(0);
-}
-
-/* Peer cards with depth */
-.peer-card {
-  background: var(--bg);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  box-shadow: var(--shadow-s);
-  transition: var(--transition-normal);
-  cursor: pointer;
-}
-
-.peer-card:hover {
-  background: var(--bg-light);
-  box-shadow: var(--shadow-m);
-  transform: translateY(-1px);
-}
-
-.peer-card.selected {
-  background: var(--bg-light);
-  border-color: var(--accent-primary);
-  box-shadow: var(--shadow-m);
-}
-
-.peer-card:active {
-  transform: translateY(0);
-  box-shadow: var(--shadow-s);
-}
-
-/* Upload area with depth */
-.upload-area {
-  background: var(--bg-dark);
-  border: 2px dashed var(--border-subtle);
-  border-radius: 12px;
-  box-shadow: var(--shadow-inset);
-  transition: var(--transition-normal);
-}
-
-.upload-area:hover {
-  background: var(--bg);
-  border-color: var(--accent-primary);
-  box-shadow: var(--shadow-s);
-}
-
-/* Tabs with depth */
-[data-mantine-component="TabsList"] {
-  background: var(--bg-dark);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 4px;
-  box-shadow: var(--shadow-inset);
-}
-
-/* Fixed height class for tab panels - ensures both panels match exactly */
-/* Only set height - Mantine handles display/visibility automatically */
+/* Fixed-height tab panels */
 .tab-panel-fixed {
   height: min(400px, 50vh) !important;
 }
 
-/* Responsive height adjustments for different screen sizes */
 @media (max-width: 640px) {
   .tab-panel-fixed {
     height: min(300px, 40vh) !important;
@@ -404,75 +243,427 @@ body {
   }
 }
 
+/* ============================================
+   SHELL — wordmark + device card
+   ============================================ */
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.wordmark .name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.wordmark .name em {
+  font-style: normal;
+  color: var(--accent-primary);
+}
+
+.device-card {
+  background-color: var(--bg);
+  background-image: var(--brushed-soft);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: 11px 12px;
+  box-shadow: var(--shadow-inset);
+}
+.device-card .da {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.86rem;
+  color: var(--text-primary);
+}
+.device-card .dm {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+/* ============================================
+   PANELS (brushed-steel raised surfaces)
+   ============================================ */
+
+.peers-panel-paper,
+.send-panel-paper,
+.depth-panel {
+  background-color: var(--bg);
+  background-image: var(--brushed),
+    linear-gradient(to bottom, oklch(1 0 0 / 0.035), transparent 45%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-m);
+  transition: var(--transition-normal);
+}
+
+.empty-state-panel {
+  background-color: var(--bg-dark);
+  background-image: var(--brushed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-inset);
+}
+
+.depth-card {
+  background-color: var(--bg);
+  background-image: var(--brushed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-m);
+}
+
+.depth-inset {
+  background-color: var(--bg-dark);
+  background-image: var(--brushed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-inset);
+}
+
+/* ============================================
+   PEER CARDS — CSS-driven states (no JS)
+   ============================================ */
+
+.peer-card {
+  background-color: var(--bg);
+  background-image: var(--brushed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-s);
+  transition: var(--transition-normal);
+  cursor: pointer;
+  position: relative;
+}
+.peer-card:hover {
+  background-color: var(--bg-light);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-m);
+}
+.peer-card:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-s);
+}
+.peer-card.selected {
+  background-color: var(--bg-light);
+  border-color: var(--accent-primary);
+  box-shadow: var(--shadow-m);
+}
+.peer-card.selected::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 16%;
+  bottom: 16%;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent-primary);
+}
+
+/* ============================================
+   UPLOAD / DROPZONE
+   ============================================ */
+
+.upload-area {
+  background-color: var(--bg-dark);
+  background-image: var(--brushed);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-inset);
+  transition: var(--transition-normal);
+}
+.upload-area:hover {
+  border-color: var(--accent-primary);
+  box-shadow: var(--shadow-s),
+    0 0 0 4px color-mix(in oklch, var(--accent-primary) 12%, transparent);
+}
+
+/* ============================================
+   BUTTONS — CSS-driven states (no JS)
+   ============================================ */
+
+.depth-button-primary {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    to bottom,
+    var(--accent-primary-light),
+    var(--accent-primary)
+  ) !important;
+  color: var(--on-accent) !important;
+  border: 1px solid var(--accent-primary-dark) !important;
+  box-shadow: var(--shadow-m) !important;
+  transition: transform var(--transition-normal),
+    box-shadow var(--transition-normal) !important;
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+.depth-button-primary::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 50%;
+  background: linear-gradient(to bottom, oklch(1 0 0 / 0.22), transparent);
+  pointer-events: none;
+}
+.depth-button-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-l) !important;
+}
+.depth-button-primary:active {
+  transform: translateY(0) !important;
+  box-shadow: var(--shadow-s) !important;
+}
+
+.depth-button-secondary {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--bg-light);
+  background-image: var(--brushed-soft),
+    linear-gradient(to bottom, var(--bg-lighter), var(--bg-light)) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: var(--shadow-s) !important;
+  transition: transform var(--transition-normal),
+    box-shadow var(--transition-normal), background var(--transition-normal) !important;
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+.depth-button-secondary::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 50%;
+  background: linear-gradient(to bottom, oklch(1 0 0 / 0.08), transparent);
+  pointer-events: none;
+}
+.depth-button-secondary:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-m) !important;
+  background-image: var(--brushed-soft),
+    linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter)) !important;
+}
+.depth-button-secondary:active {
+  transform: translateY(0) !important;
+  box-shadow: var(--shadow-inset) !important;
+}
+
+/* ============================================
+   ACTION ICONS — global depth treatment
+   ============================================ */
+
+[data-mantine-component="ActionIcon"] {
+  background-color: var(--bg-light);
+  background-image: var(--brushed-soft),
+    linear-gradient(to bottom, var(--bg-lighter), var(--bg-light));
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-s);
+  transition: var(--transition-fast);
+}
+[data-mantine-component="ActionIcon"]:hover {
+  transform: translateY(-1px);
+  color: var(--text-primary);
+  background-image: var(--brushed-soft),
+    linear-gradient(to bottom, var(--bg-lighter), var(--bg-lighter));
+  box-shadow: var(--shadow-m);
+}
+[data-mantine-component="ActionIcon"]:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-inset);
+}
+
+/* ============================================
+   TABS
+   ============================================ */
+
+[data-mantine-component="TabsList"] {
+  background-color: var(--bg-dark);
+  background-image: var(--brushed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: 4px;
+  box-shadow: var(--shadow-inset);
+}
+
 [data-mantine-component="TabsTab"] {
   background: transparent;
   border: none;
   border-radius: 6px;
   transition: var(--transition-fast);
-  position: relative;
+  color: var(--text-tertiary);
+  font-weight: 600;
 }
-
-[data-mantine-component="TabsTab"][data-active="true"] {
-  background: linear-gradient(to bottom, var(--bg-light), var(--bg));
-  box-shadow: var(--shadow-s);
+[data-mantine-component="TabsTab"]:hover {
   color: var(--text-primary);
 }
-
-[data-mantine-component="TabsTab"][data-active="true"]::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(to bottom, oklch(1 0 0 / 0.1), transparent);
-  pointer-events: none;
-  border-radius: 6px 6px 0 0;
+[data-mantine-component="TabsTab"][data-active="true"] {
+  color: var(--text-primary);
+  background-color: var(--bg-light);
+  background-image: var(--brushed-soft),
+    linear-gradient(to bottom, var(--bg-light), var(--bg));
+  box-shadow: var(--shadow-s);
 }
 
-/* Paper components with depth */
-[data-mantine-component="Paper"] {
-  transition: var(--transition-normal);
+/* ============================================
+   INPUTS
+   ============================================ */
+
+[data-mantine-component="TextInput"] input,
+[data-mantine-component="NumberInput"] input,
+[data-mantine-component="Textarea"] textarea {
+  background-color: var(--bg-light) !important;
+  background-image: var(--brushed-soft),
+    linear-gradient(to bottom, var(--bg-lighter), var(--bg-light)) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-control) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-s) !important;
+  transition: var(--transition-fast) !important;
+}
+[data-mantine-component="TextInput"] input:focus,
+[data-mantine-component="NumberInput"] input:focus,
+[data-mantine-component="Textarea"] textarea:focus {
+  outline: none;
+  border-color: var(--accent-primary) !important;
+  box-shadow: var(--shadow-m),
+    0 0 0 3px color-mix(in oklch, var(--accent-primary) 22%, transparent) !important;
 }
 
-[data-mantine-component="Paper"]:hover {
+[data-mantine-component="NumberInput"]
+  [data-mantine-component="NumberInputControl"] {
+  background-color: var(--bg-light) !important;
+  border: 1px solid var(--border-subtle) !important;
+  color: var(--text-secondary) !important;
+  box-shadow: var(--shadow-s) !important;
+  transition: var(--transition-fast) !important;
+}
+[data-mantine-component="NumberInput"]
+  [data-mantine-component="NumberInputControl"]:hover {
+  color: var(--text-primary) !important;
   box-shadow: var(--shadow-m) !important;
 }
 
 /* ============================================
-   DEPTH SYSTEM - INPUT FIELDS
+   EMPTY STATES (intentional, not stock)
    ============================================ */
 
-[data-mantine-component="TextInput"] input,
-[data-mantine-component="NumberInput"] input {
+.empty-listen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 12px;
+  text-align: center;
+  padding: 30px 18px;
+}
+.empty-listen .signal {
   position: relative;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+}
+.empty-listen .signal i {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid var(--accent-primary);
+}
+.empty-listen .signal i:nth-child(1) {
+  width: 10px;
+  height: 10px;
+  background: var(--accent-primary);
+}
+.empty-listen .signal i:nth-child(2),
+.empty-listen .signal i:nth-child(3) {
+  opacity: 0;
+  animation: ripple 2.4s ease-out infinite;
+}
+.empty-listen .signal i:nth-child(2) {
+  width: 10px;
+  height: 10px;
+  animation-delay: 0.5s;
+}
+.empty-listen .signal i:nth-child(3) {
+  width: 10px;
+  height: 10px;
+  animation-delay: 1s;
+}
+.empty-listen h4 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.empty-listen h4 b {
+  color: var(--accent-primary);
+}
+.empty-listen p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  max-width: 26ch;
 }
 
-[data-mantine-component="TextInput"] input:focus,
-[data-mantine-component="NumberInput"] input:focus {
-  outline: none;
-  box-shadow: var(--shadow-m), 0 0 0 2px oklch(0.65 0.2 250 / 0.2) !important;
-  border-color: var(--accent-primary) !important;
+.empty-pick {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 30px 18px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-card);
+  background-color: var(--bg-dark);
+  background-image: var(--brushed);
+}
+.empty-pick .gl {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background-color: var(--bg);
+  background-image: var(--brushed);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-inset);
+  color: var(--text-tertiary);
+}
+.empty-pick h4 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.98rem;
+  color: var(--text-primary);
+}
+.empty-pick p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  max-width: 24ch;
 }
 
-/* NumberInput controls with depth */
-[data-mantine-component="NumberInput"]
-  [data-mantine-component="NumberInputControl"] {
-  background: var(--bg-light) !important;
-  border: 1px solid var(--border-subtle) !important;
-  box-shadow: var(--shadow-s) !important;
-  transition: var(--transition-fast) !important;
-}
+/* ============================================
+   TYPE HELPERS
+   ============================================ */
 
-[data-mantine-component="NumberInput"]
-  [data-mantine-component="NumberInputControl"]:hover {
-  background: var(--bg-lighter) !important;
-  box-shadow: var(--shadow-m) !important;
-  transform: translateY(-1px);
+.t-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
-
-[data-mantine-component="NumberInput"]
-  [data-mantine-component="NumberInputControl"]:active {
-  transform: translateY(0);
-  box-shadow: var(--shadow-s) !important;
+.t-mono {
+  font-family: var(--font-mono);
 }
