@@ -61,12 +61,24 @@ jobs:
         # The standalone .exe is fully self-contained (Tauri bundles the
         # WebView loader and all runtime deps into the binary), so it is the
         # portable build. Zip it up alongside the installers.
+        # Note: the raw binary in target/release is named after the *Cargo
+        # package name* (local-share.exe), not the productName ("Local Share"),
+        # which only governs the MSI/NSIS installer names.
         shell: pwsh
         run: |
-          $exe = "src-tauri/target/x86_64-pc-windows-msvc/release/Local Share.exe"
+          $releaseDir = "src-tauri/target/x86_64-pc-windows-msvc/release"
+          $exe = Join-Path $releaseDir "local-share.exe"
+          # Fallback: take any top-level .exe in release/ (Get-ChildItem is
+          # non-recursive, so ./bundle installers are excluded automatically)
+          # in case the Cargo package is renamed again.
           if (-not (Test-Path $exe)) {
-            throw "Portable .exe not found at: $exe"
+            $exe = (Get-ChildItem -Path $releaseDir -Filter *.exe -File |
+                    Select-Object -First 1).FullName
           }
+          if (-not $exe -or -not (Test-Path $exe)) {
+            throw "Portable .exe not found under: $releaseDir"
+          }
+          Write-Host "Packaging portable exe: $exe"
           Compress-Archive -Path $exe -DestinationPath "Local-Share-portable-x86_64.zip" -Force
           Write-Host "Created Local-Share-portable-x86_64.zip"
 
