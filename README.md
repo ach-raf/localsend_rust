@@ -47,10 +47,14 @@ _Incoming file transfer on mobile_
 
 ## Building the App
 
-### Build for Current Platform
+> **⚠️ Pass flags with `npx`, not `npm run`.**
+> `npm run tauri android build -- --apk` produces `npm warn Unknown cli config "--apk"`. npm inspects **every** flag on the line — even the ones after `--` — against its own config, warns about the ones it doesn't know, and a future npm version will drop them entirely ([npm/cli#9353](https://github.com/npm/cli/issues/9353)).
+> `npx tauri ...` runs the CLI directly, so the flags reach Tauri untouched. Use `npm run tauri X` only for commands with **no** flags (`dev`, `build`, `android init`).
+
+### Build for Current Platform (desktop)
 
 ```bash
-npm run tauri build
+npm run tauri build      # no flags → npm run is fine
 ```
 
 ### Build for Android
@@ -58,33 +62,39 @@ npm run tauri build
 **⚠️ First-time setup**: Android APKs must be signed. See [ANDROID_SIGNING.md](ANDROID_SIGNING.md) for the full guide (current setup, CI, troubleshooting, backups, and production signing).
 
 ```bash
-# Initialize Android project (first time only)
+# Initialize Android project (first time only) — no flags, npm run is fine
 npm run tauri android init
 
-# Build signed APK
-npm run tauri android build -- --split-per-abi --apk
+# Build a single universal signed APK (smallest command, one file for all devices)
+npx tauri android build --apk
+
+# Build one signed APK per architecture (smaller per-device downloads)
+npx tauri android build --split-per-abi --apk
 ```
 
-With --split-per-abi
+The flags (from `npx tauri android build --help`):
 
-Creates separate APKs for each architecture:
+| Flag | Meaning |
+| --- | --- |
+| `--apk` | Build APKs (Play Store submission uses `--aab` instead) |
+| `--aab` | Build AABs (Android App Bundle) |
+| `--split-per-abi` | Split the output per ABI instead of one universal bundle |
+| `-t, --target <TARGETS>` | Build only specific targets: `aarch64`, `armv7`, `i686`, `x86_64` |
+| `-d, --debug` | Debug build instead of release |
 
-```bash
-my-app-arm64-v8a.apk           (15 MB)  ← Modern
-phonesmy-app-armeabi-v7a.apk   (15 MB)  ← Older
-phonesmy-app-x86_64.apk        (15 MB)  ← Emulators/tablets
-my-app-x86.apk                 (15 MB)  ← Rare devices
-```
+> `--apk` and `--aab` are boolean flags — write `--apk`, **not** `--apk true`. Omitting both builds APK + AAB.
 
-Can also use
+**Output** (under `src-tauri/gen/android/app/build/outputs/apk/`):
 
-```bash
---apk or --aab true - Explicitly specify which format to build
+- Universal build (`--apk`): `universal/release/app-universal-release.apk`
+- Split build (`--split-per-abi --apk`): one APK per ABI —
 
--t <target> - Specify target architectures (e.g., aarch64, armv7, etc.)
-```
-
-**Output**: `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`
+  ```
+  arm64/release/app-arm64-release.apk       ← modern 64-bit phones (use this one)
+  arm/release/app-arm-release.apk           ← older 32-bit phones
+  x86_64/release/app-x86_64-release.apk     ← emulators / tablets
+  x86/release/app-x86-release.apk           ← rare devices
+  ```
 
 ## Automated Builds with GitHub Actions
 
@@ -135,7 +145,7 @@ See [ANDROID_SIGNING.md](ANDROID_SIGNING.md) for detailed instructions.
 
 ```bash
 npm install
-npm run tauri dev
+npm run tauri dev     # no flags → npm run is fine
 ```
 
 ## Recommended IDE Setup

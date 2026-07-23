@@ -11,8 +11,10 @@ Android requires every APK/AAB to be **signed** before it can be installed or up
 If the keystore is already in place (it is, in this repo):
 
 ```bash
-npm run tauri android build --split-per-abi --apk
+npx tauri android build --split-per-abi --apk
 ```
+
+> **Use `npx`, not `npm run ... --`.** npm parses flags on the line — even after `--` — as its own config and warns about unknown ones (`npm warn Unknown cli config "--apk"`); a future npm will drop them entirely ([npm/cli#9353](https://github.com/npm/cli/issues/9353)). `npx tauri ...` passes the flags straight to the CLI.
 
 Output (per architecture):
 
@@ -23,7 +25,7 @@ src-tauri/gen/android/app/build/outputs/apk/<arch>/release/app-<arch>-release.ap
 For a single universal APK instead:
 
 ```bash
-npm run tauri android build --apk
+npx tauri android build --apk
 # -> .../apk/universal/release/app-universal-release.apk
 ```
 
@@ -33,7 +35,7 @@ Install on a connected device:
 adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
 ```
 
-`tauri android build` produces a **release** build by default — it is signed automatically with the configured release key. There is no `--release` flag to add.
+`tauri android build` produces a **release** build by default — it is signed automatically with the configured release key. There is no `--release` flag to add. `--apk` is a boolean flag — write `--apk`, not `--apk true`.
 
 ---
 
@@ -280,7 +282,7 @@ The release APK was built without signing — `key.properties` is missing or the
 
 - Confirm `src-tauri/gen/android/key.properties` exists and has all four keys.
 - Confirm `build.gradle.kts` wires `signingConfigs.getByName("release")` into the `release` buildType.
-- Clean and rebuild: `npm run tauri android build --apk` (remove stale outputs under `app/build/` if needed).
+- Clean and rebuild: `npx tauri android build --apk` (remove stale outputs under `app/build/` if needed).
 
 ### `Wrong password` / `keystore was tampered with`
 
@@ -352,7 +354,7 @@ This project has **not** done this. Use it only if you are publishing to the Pla
 
 ```bash
 # Build a signed release APK
-npm run tauri android build --split-per-abi --apk
+npx tauri android build --split-per-abi --apk
 
 # Inspect the keystore identity
 keytool -list -v -keystore src-tauri/gen/android/app/upload-keystore.jks -storepass android
