@@ -1001,3 +1001,174 @@ body {
     flex: 1 1 0;
   }
 }
+
+/* ============================================
+   FILE TRANSFER CONFIRM MODAL
+   (system-managed · design.md · same treatment as the receive modal)
+   Flush header with mark, recessed scrollable file list (no box-in-box),
+   one-row footer: total summary left, Accept/Reject right.
+   ============================================ */
+
+.ftc {
+  width: min(520px, 92vw) !important;
+  max-height: min(620px, 88vh) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  background-color: var(--bg-light) !important;
+  background-image: var(--brushed-soft) !important;
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: var(--shadow-l) !important;
+}
+
+.ftc-header {
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.ftc-body {
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  background: transparent !important;
+}
+
+/* Header — mark + headline on one row, hairline under. */
+.ftc-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background-image: linear-gradient(to bottom, oklch(1 0 0 / 0.04), transparent);
+}
+.ftc-mark {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-control);
+  color: var(--on-accent);
+  background: linear-gradient(
+    135deg,
+    var(--accent-primary-light),
+    var(--accent-primary)
+  );
+  box-shadow: var(--shadow-s);
+}
+.ftc-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.ftc-kicker {
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.ftc-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* File list — recessed trough, scrollable. No inner card wrapper. */
+.ftc-list {
+  flex: 1 1 auto;
+  min-height: 60px;
+  max-height: min(260px, 38vh);
+  overflow-y: auto;
+  background-color: var(--bg-dark);
+  background-image: var(--brushed);
+  box-shadow: var(--shadow-inset);
+}
+.ftc-file {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ftc-file:last-child {
+  border-bottom: none;
+}
+.ftc-file-icon {
+  flex: none;
+}
+.ftc-file-name {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ftc-file-size {
+  flex: none;
+  font-size: 0.74rem;
+  color: var(--text-tertiary);
+}
+
+/* Footer — total summary left, Accept/Reject buttons right. One row. */
+.ftc-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  flex: none;
+}
+.ftc-total {
+  font-size: 0.74rem;
+  color: var(--text-tertiary);
+  min-width: 0;
+}
+.ftc-actions-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+.ftc-action {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* ---- Phone: keep one row where possible; if it can't, buttons split the
+   line (Reject + Accept equal width), summary above. Never Reject-first. ---- */
+@media (max-width: 480px) {
+  .ftc {
+    width: 96vw !important;
+    max-height: 92vh !important;
+  }
+  .ftc-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  .ftc-total {
+    text-align: center;
+  }
+  .ftc-actions-buttons {
+    margin-left: 0;
+    flex: 1 1 100%;
+  }
+  .ftc-actions-buttons .ftc-action {
+    flex: 1 1 0;
+  }
+}

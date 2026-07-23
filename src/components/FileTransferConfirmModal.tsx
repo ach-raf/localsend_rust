@@ -1,4 +1,4 @@
-import { Modal, Text, Group, Button, Stack } from "@mantine/core";
+import { Modal, Button } from "@mantine/core";
 import { IconFile, IconFileDownload } from "@tabler/icons-react";
 
 interface FileTransferConfirmModalProps {
@@ -41,144 +41,78 @@ export default function FileTransferConfirmModal({
     <Modal
       opened={opened}
       onClose={handleReject}
-      title={
-        <div>
-          <div className="t-mono text-[0.7rem] tracking-[0.1em] uppercase text-text-tertiary">
-            Incoming transfer
-          </div>
-          <Text fw={700} size="1.5rem" className="t-display text-text-primary">
-            {totalFiles > 1 ? `${totalFiles} files` : "File request"}
-          </Text>
-        </div>
-      }
       centered
       radius="lg"
       closeOnClickOutside={false}
       closeOnEscape={false}
       withCloseButton={false}
-      size="md"
+      size="auto"
       overlayProps={{ backgroundOpacity: 0.75 }}
-      styles={{
-        header: {
-          background: "linear-gradient(to bottom, var(--bg-light), var(--bg))",
-          borderBottom: "1px solid var(--border-subtle)",
-          padding: "clamp(1rem, 4vw, 1.5rem)",
-          boxShadow: "inset 0 1px 2px oklch(0.6 0.02 150 / 0.15)",
-        },
-        content: {
-          backgroundColor: "var(--bg-light)",
-          backgroundImage: "var(--brushed-soft)",
-          border: "1px solid var(--border-subtle)",
-          maxWidth: "min(90vw, 500px)",
-          boxShadow: "var(--shadow-l)",
-        },
-        body: {
-          padding: "clamp(1rem, 4vw, 1.5rem)",
-          background: "var(--bg-light)",
-        },
-      }}
+      classNames={{ content: "ftc", header: "ftc-header", body: "ftc-body" }}
     >
-      <Stack gap="xl">
-        <Stack gap="md" align="center">
-          <div
-            style={{
-              background:
-                "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
-              borderRadius: "20px",
-              padding: "clamp(1.25rem, 5vw, 1.5rem)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "var(--shadow-m)",
-              color: "var(--on-accent)",
-            }}
-          >
-            <IconFileDownload size={48} stroke={2.5} />
-          </div>
-          <Text
-            size="clamp(1.1rem, 4vw, 1.25rem)"
-            fw={600}
-            ta="center"
-            className="t-display"
-            style={{ lineHeight: "1.4" }}
-          >
-            {totalFiles > 1
-              ? `Accept these ${totalFiles} files?`
-              : "Accept this file?"}
-          </Text>
-          {totalFiles > 1 && (
-            <Text size="sm" c="dimmed" className="t-mono">
-              Total {formatFileSize(totalSize)}
-            </Text>
-          )}
-        </Stack>
-
-        <div
-          style={{
-            padding: "clamp(0.75rem, 3vw, 1rem)",
-            backgroundColor: "var(--bg)",
-            backgroundImage: "var(--brushed)",
-            borderRadius: "12px",
-            border: "1px solid var(--border-subtle)",
-            boxShadow: "var(--shadow-inset)",
-            maxHeight: "200px",
-            overflowY: "auto",
-          }}
-        >
-          <Stack gap="sm">
-            {files.map((file, index) => (
-              <Group key={index} gap="sm" align="flex-start" wrap="nowrap">
-                <IconFile
-                  size={20}
-                  color="var(--accent-primary)"
-                  style={{ flexShrink: 0, marginTop: "2px" }}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Text
-                    size="sm"
-                    fw={600}
-                    style={{
-                      color: "var(--text-primary)",
-                      wordBreak: "break-word",
-                      overflowWrap: "break-word",
-                      lineHeight: "1.4",
-                    }}
-                  >
-                    {file.name}
-                  </Text>
-                  {file.size !== undefined && (
-                    <Text size="xs" c="dimmed" className="t-mono">
-                      {formatFileSize(file.size)}
-                    </Text>
-                  )}
-                </div>
-              </Group>
-            ))}
-          </Stack>
+      {/* Header — tight, hairline under. No nested padding. */}
+      <header className="ftc-header-inner">
+        <div className="ftc-mark">
+          <IconFileDownload size={20} stroke={2.5} />
         </div>
+        <div className="ftc-headline">
+          <span className="t-mono ftc-kicker">Incoming transfer</span>
+          <span className="t-display ftc-title">
+            {totalFiles > 1
+              ? `Accept ${totalFiles} files?`
+              : "Accept this file?"}
+          </span>
+        </div>
+      </header>
 
-        <Stack gap="sm">
+      {/* File list — recessed scrollable trough. No box-in-box. */}
+      <div className="ftc-list" role="list">
+        {files.map((file, index) => (
+          <div className="ftc-file" key={index} role="listitem">
+            <IconFile
+              size={18}
+              className="ftc-file-icon"
+              style={{ color: "var(--accent-primary)" }}
+            />
+            <span className="ftc-file-name" title={file.name}>
+              {file.name}
+            </span>
+            {file.size !== undefined && (
+              <span className="t-mono ftc-file-size">
+                {formatFileSize(file.size)}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Summary + actions — one footer row, primary left / dismissive right. */}
+      <footer className="ftc-actions">
+        <div className="t-mono ftc-total">
+          {totalFiles > 1 && (
+            <>
+              {totalFiles} files · {formatFileSize(totalSize)}
+            </>
+          )}
+        </div>
+        <div className="ftc-actions-buttons">
           <Button
-            onClick={handleAccept}
-            size="lg"
-            fullWidth
-            className="depth-button-primary"
-            style={{ height: "clamp(52px, 12vw, 56px)" }}
-          >
-            Accept transfer
-          </Button>
-          <Button
-            variant="light"
             onClick={handleReject}
-            size="lg"
-            fullWidth
-            className="depth-button-secondary"
-            style={{ height: "clamp(48px, 11vw, 52px)" }}
+            variant="light"
+            size="md"
+            className="depth-button-secondary ftc-action ftc-reject"
           >
             Reject
           </Button>
-        </Stack>
-      </Stack>
+          <Button
+            onClick={handleAccept}
+            size="md"
+            className="depth-button-primary ftc-action ftc-accept"
+          >
+            Accept
+          </Button>
+        </div>
+      </footer>
     </Modal>
   );
 }
