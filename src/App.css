@@ -850,3 +850,154 @@ body {
     width: 100%;
   }
 }
+
+/* ============================================
+   RECEIVE MESSAGE MODAL
+   (system-managed · design.md · tight, preview-first)
+   No padding boxes inside padding. Header flush, preview
+   owns the room, actions pinned to a one-row footer.
+   ============================================ */
+
+.rmsg {
+  width: min(680px, 92vw) !important;
+  max-height: min(680px, 88vh) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  background-color: var(--bg-light) !important;
+  background-image: var(--brushed-soft) !important;
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: var(--shadow-l) !important;
+}
+
+.rmsg-header {
+  /* Mantine header is a flex row already; we drive it via the inner el. */
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.rmsg-body {
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  background: transparent !important;
+}
+
+.rmsg-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background-image: linear-gradient(
+    to bottom,
+    oklch(1 0 0 / 0.04),
+    transparent
+  );
+}
+
+.rmsg-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+.rmsg-kicker {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  flex: none;
+}
+.rmsg-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex: none;
+}
+.rmsg-sender {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.rmsg-close {
+  color: var(--text-tertiary) !important;
+  flex: none;
+  transition: var(--transition-fast);
+}
+.rmsg-close:hover {
+  color: var(--text-primary) !important;
+}
+
+/* The preview textarea — recessed trough inside the brushed body.
+   Grows to fill available height; short messages don't waste rows. */
+.rmsg .rmsg-preview {
+  flex: 1 1 auto !important;
+  min-height: 140px !important;
+  font-family: var(--font-mono) !important;
+  font-size: 1rem !important;
+  line-height: 1.6 !important;
+  color: var(--text-primary) !important;
+  background-color: var(--bg-dark) !important;
+  background-image: var(--brushed) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  border-top: 1px solid var(--border-subtle) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  box-shadow: var(--shadow-inset) !important;
+  padding: 1rem 1.25rem !important;
+  cursor: text;
+  user-select: text;
+  resize: none;
+}
+
+/* Actions — a single pinned footer row. Buttons shrink (`flex: 0 1 auto`) so
+   the whole row fits on one line where possible; Close sits on the right via
+   `margin-right: auto` on the primary group. Wrapping is a last resort. */
+.rmsg-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  flex: none;
+}
+.rmsg-actions-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-right: auto; /* pushes Close to the right edge */
+  min-width: 0;
+}
+.rmsg-action {
+  flex: 0 1 auto; /* shrink before the row overflows */
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* ---- Phone: keep one row if it fits; if it truly can't, primary actions
+   stay grouped on TOP (Open URL + Copy split the line), Close wraps BELOW,
+   right-aligned. Never Close-first. ---- */
+@media (max-width: 480px) {
+  .rmsg {
+    width: 96vw !important;
+    max-height: 92vh !important;
+  }
+  .rmsg-actions-primary {
+    flex: 1 1 100%;
+  }
+  .rmsg-actions-primary .rmsg-action {
+    flex: 1 1 0;
+  }
+}
