@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 // Global handle to the discovery system
@@ -30,6 +30,33 @@ pub struct Peer {
 enum DiscoveryCommand {
     Refresh,
     UpdateAlias(String),
+}
+
+/// How often we proactively re-send the mDNS query. mDNS is request/response:
+/// a device that started browsing *before* a peer appeared would otherwise
+/// never ask again, so a newcomer stays invisible until someone hits Refresh.
+/// 30s keeps that latency low without flooding the network with multicast.
+const REQUERY_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Re-send the multicast query by stopping the current browse and starting a
+/// fresh one. This is exactly what the manual Refresh button does, and what we
+/// now also run on a timer. The peer map is intentionally NOT cleared (known
+/// peers stay visible) and the daemon is NOT recreated (its registration stays
+/// alive), so this is non-destructive and causes no flicker.
+fn restart_browse(
+    daemon: &ServiceDaemon,
+    service_type: &str,
+) -> Option<mdns_sd::Receiver<ServiceEvent>> {
+    if let Err(e) = daemon.stop_browse(service_type) {
+        eprintln!("Warning: stop_browse returned: {}", e);
+    }
+    match daemon.browse(service_type) {
+        Ok(receiver) => Some(receiver),
+        Err(e) => {
+            eprintln!("Warning: restart browse failed: {}", e);
+            None
+        }
+    }
 }
 
 pub fn start_discovery(app: AppHandle, my_alias: String) {
@@ -63,10 +90,12 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
         eprintln!("mDNS discovery thread started");
 
         // ONE daemon, kept alive for the lifetime of the app. mDNS itself handles
-        // re-announcement (TTL), continuous discovery, and expiration (goodbye
-        // packets -> ServiceRemoved). Periodically restarting the browser and
-        // clearing the peer map is what made peers flicker every 30s, so we trust
-        // the protocol instead and never recreate the daemon.
+        // re-announcement (TTL) and expiration (goodbye packets -> ServiceRemoved).
+        // We DO periodically re-browse (see REQUERY_INTERVAL below) so an
+        // already-running device sees a newcomer — but we never clear the peer
+        // map and never recreate the daemon. Clearing the map / recreating the
+        // daemon is what made peers flicker every 30s; the periodic re-browse
+        // alone is non-destructive and causes no flicker.
         let daemon = match ServiceDaemon::new() {
             Ok(d) => d,
             Err(e) => {
@@ -87,6 +116,11 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
             }
         };
 
+        // Track when we last solicited peers. We re-query on a timer so that a
+        // device already running when a peer appears will learn about it within
+        // REQUERY_INTERVAL, instead of waiting for a manual Refresh.
+        let mut last_query = Instant::now();
+
         loop {
             // Handle control commands (non-blocking)
             match cmd_receiver.try_recv() {
@@ -95,13 +129,8 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
                     // re-announce immediately. We do NOT clear the peer map and do
                     // NOT recreate the daemon — known peers stay visible.
                     eprintln!("Refresh: re-querying mDNS (peer list preserved)");
-                    if let Err(e) = daemon.stop_browse(service_type) {
-                        eprintln!("Warning: stop_browse returned: {}", e);
-                    }
-                    match daemon.browse(service_type) {
-                        Ok(receiver) => receiver_opt = Some(receiver),
-                        Err(e) => eprintln!("Warning: restart browse failed: {}", e),
-                    }
+                    receiver_opt = restart_browse(&daemon, service_type);
+                    last_query = Instant::now();
                 }
                 Ok(DiscoveryCommand::UpdateAlias(new_alias)) => {
                     eprintln!("Alias update command received: {}", new_alias);
@@ -112,6 +141,16 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
                 Err(_) => {
                     // No command waiting — fall through to process events.
                 }
+            }
+
+            // Proactively re-query on a timer. An already-running browser would
+            // otherwise never ask again after its initial query, so a newcomer
+            // stays invisible until someone hits Refresh. The loop wakes ~every
+            // 200ms via recv_timeout, so we just check the elapsed here.
+            if last_query.elapsed() >= REQUERY_INTERVAL {
+                eprintln!("Periodic re-query: re-soliciting peers");
+                receiver_opt = restart_browse(&daemon, service_type);
+                last_query = Instant::now();
             }
 
             // Drain mDNS events with a short timeout so we keep checking commands.
