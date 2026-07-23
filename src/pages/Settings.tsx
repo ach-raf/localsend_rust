@@ -5,9 +5,7 @@ import {
   TextInput,
   NumberInput,
   Button,
-  Stack,
-  Paper,
-  Group,
+  Text,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { invoke } from "@tauri-apps/api/core";
@@ -86,76 +84,88 @@ export default function Settings() {
       px={{ base: "xs", sm: "md", lg: "xl" }}
       className="animate-[fadeIn_250ms_ease-out]"
     >
-      <Paper p={{ base: "sm", sm: "lg", md: "xl" }} className="depth-panel max-w-[800px] mx-auto">
-        {/* Header */}
-        <div
-          className="mb-8 md:mb-10"
-          style={{ paddingBottom: "1.5rem", borderBottom: "1px solid var(--border-subtle)" }}
-        >
-          <div className="t-mono text-[0.7rem] tracking-[0.14em] uppercase text-text-tertiary mb-1.5">
-            configuration
-          </div>
-          <Title order={2} className="t-display text-text-primary">
+      <div className="settings-panel depth-panel max-w-[640px] mx-auto">
+        {/* Header — tight: title + one purpose line, hairline under */}
+        <header className="settings-header">
+          <Title
+            order={2}
+            className="t-display text-text-primary text-[1.625rem] md:text-[1.875rem]"
+          >
             Settings
           </Title>
-        </div>
+          <Text className="t-mono settings-purpose">
+            How this device appears and listens on the network
+          </Text>
+        </header>
 
-        <Stack gap="xl">
-          {/* Device identity */}
-          <div className="depth-inset p-6">
-            <div className="t-mono text-[0.7rem] tracking-[0.12em] uppercase text-text-tertiary mb-4">
-              Device identity
+        {/* Body — definition list of fields, hairline-separated */}
+        <div className="settings-body">
+          {/* Device */}
+          <div className="settings-group-label">Device</div>
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <div className="settings-field-name">Alias</div>
+              <div className="settings-field-desc">
+                Name visible to nearby devices
+              </div>
             </div>
-            <TextInput
-              label="Alias"
-              description="Your name visible to other devices on the network"
-              value={config.alias}
-              onChange={(event) =>
-                setConfig({ ...config, alias: event.currentTarget.value })
-              }
-              size="md"
-            />
-            <Group mt="md">
+            <div className="settings-row-control">
+              <TextInput
+                value={config.alias}
+                onChange={(event) =>
+                  setConfig({ ...config, alias: event.currentTarget.value })
+                }
+                size="md"
+                placeholder="Your device name"
+              />
               <Button
                 variant="light"
                 size="md"
                 onClick={handleRandomize}
-                leftSection={<IconDice size={20} />}
-                className="depth-button-secondary w-full sm:w-auto"
+                leftSection={<IconDice size={18} />}
+                className="depth-button-secondary settings-action"
               >
-                Generate random name
+                Generate
               </Button>
-            </Group>
+            </div>
           </div>
+
+          <div className="settings-divider" />
 
           {/* Network */}
-          <div className="depth-inset p-6">
-            <div className="t-mono text-[0.7rem] tracking-[0.12em] uppercase text-text-tertiary mb-4">
-              Network
+          <div className="settings-group-label">Network</div>
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <div className="settings-field-name">Port</div>
+              <div className="settings-field-desc settings-field-warning">
+                Requires app restart to take effect
+              </div>
             </div>
-            <NumberInput
-              label="Port"
-              description="Network port to listen on (requires app restart to take effect)"
-              value={config.port}
-              onChange={(val) => setConfig({ ...config, port: Number(val) })}
-              allowNegative={false}
-              min={1024}
-              max={65535}
-              size="md"
-              styles={{ description: { color: "var(--accent-warning)" } }}
-            />
+            <div className="settings-row-control">
+              <NumberInput
+                value={config.port}
+                onChange={(val) => setConfig({ ...config, port: Number(val) })}
+                allowNegative={false}
+                min={1024}
+                max={65535}
+                clampBehavior="strict"
+                size="md"
+              />
+            </div>
           </div>
+        </div>
 
+        {/* Footer — right-aligned primary action, not a full-bleed banner */}
+        <footer className="settings-footer">
           <Button
             loading={loading}
             onClick={handleSave}
-            className="depth-button-primary w-full mt-2 h-12 text-base md:h-14 md:text-lg"
-            fullWidth
+            className="depth-button-primary settings-save"
           >
             Save settings
           </Button>
-        </Stack>
-      </Paper>
+        </footer>
+      </div>
     </Container>
   );
 }

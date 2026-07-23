@@ -721,3 +721,132 @@ body {
   }
 }
 
+/* ============================================
+   SETTINGS — definition-list panel
+   (system-managed · design.md · dense, not bloated)
+   One brushed raised panel. Fields sit in a label/control
+   definition row; hairline dividers carry the rhythm, not gaps.
+   ============================================ */
+
+.settings-panel {
+  /* .depth-panel gives color/brushed/border/shadow; we tune padding here. */
+  padding: clamp(1.25rem, 1rem + 2.5vw, 2rem);
+}
+
+.settings-header {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.settings-purpose {
+  margin-top: 0.35rem;
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.settings-body {
+  /* hairline-separated definition rows */
+  padding-top: 0.5rem;
+}
+
+.settings-group-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: 1.25rem 0 0.75rem;
+}
+.settings-group-label:first-child {
+  margin-top: 0.5rem;
+}
+
+.settings-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+}
+
+.settings-row-label {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-top: 0.5rem; /* optical align with the input text */
+}
+.settings-field-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.98rem;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.settings-field-desc {
+  margin-top: 0.2rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  max-width: 34ch;
+}
+.settings-field-warning {
+  /* semantic warning — the only chromatic allowed besides phosphor */
+  color: var(--accent-warning);
+}
+
+.settings-row-control {
+  /* right column: control (+optional action). Stays narrow on desktop. */
+  flex: 0 1 280px;
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+.settings-row-control > :first-child {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.settings-action {
+  flex: 0 0 auto;
+}
+
+.settings-divider {
+  height: 1px;
+  margin: 1.25rem 0;
+  background: var(--border-subtle);
+}
+
+.settings-footer {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: flex-end;
+}
+.settings-save {
+  min-height: 40px;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+/* ---- Responsive: single column under the desktop breakpoint ---- */
+@media (max-width: 640px) {
+  .settings-row {
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .settings-row-label {
+    padding-top: 0;
+  }
+  .settings-row-control {
+    flex: 1 1 100%;
+    flex-direction: column;
+  }
+  .settings-action {
+    align-self: flex-start;
+  }
+  .settings-footer {
+    justify-content: stretch;
+  }
+  .settings-save {
+    width: 100%;
+  }
+}
