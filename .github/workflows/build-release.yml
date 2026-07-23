@@ -173,18 +173,23 @@ jobs:
             echo "storeFile=upload-keystore.jks" >> src-tauri/gen/android/key.properties
           fi
 
-      - name: Build Android APK
-        run: npm run tauri android build
+      - name: Build Android APKs
+        # Build twice from one Rust compilation:
+        #   1. a universal APK (one download installs on any device), then
+        #   2. per-ABI APKs (smaller, architecture-specific downloads).
+        # The second run reuses the already-compiled Rust targets, so it
+        # only re-packages — Gradle's incremental cache keeps it fast.
+        run: |
+          npx tauri android build --apk
+          npx tauri android build --split-per-abi --apk
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
 
-      - name: Find APK Files
-        id: find-apk
+      - name: List Built APK Files
         run: |
-          APK_PATH=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f | head -n 1)
-          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "Found APK at: $APK_PATH"
+          echo "=== APK files ==="
+          find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f | sort
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
@@ -247,7 +252,11 @@ jobs:
             echo "- \`Local-Share-portable-x86_64.zip\` — portable, extract and run"
             echo ""
             echo "**Android**"
-            echo "- \`*.apk\` — install on your device"
+            echo "- \`*-android-universal.apk\` — works on any device (larger)"
+            echo "- \`*-android-arm64-v8a.apk\` — 64-bit ARM (most modern phones)"
+            echo "- \`*-android-armeabi-v7a.apk\` — 32-bit ARM (older phones)"
+            echo "- \`*-android-x86_64.apk\` — Intel/AMD 64-bit (emulators, some tablets)"
+            echo "- \`*-android-x86.apk\` — Intel/AMD 32-bit (emulators)"
             echo ""
             echo "---"
             echo "Built from commit \`${GITHUB_SHA::7}\` on \`master\`."
@@ -281,8 +290,22 @@ jobs:
             xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-x64.msi" 2>/dev/null || true
           find ./artifacts/windows -name "*setup*.exe" -type f | head -n1 | \
             xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-x64-setup.exe" 2>/dev/null || true
-          find ./artifacts/android -name "*.apk" -type f | head -n1 | \
+
+          # Android: one per-ABI APK per device architecture, plus a universal
+          # APK for anyone who doesn't know their ABI. Pick each by its
+          # parent directory so an ABI mismatch (e.g. app-universal-release vs
+          # app-arm64-release) can't land in the wrong bucket.
+          find ./artifacts/android -path "*universal*" -name "*.apk" -type f | head -n1 | \
             xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-android-universal.apk" 2>/dev/null || true
+          find ./artifacts/android -path "*arm64*" -name "*.apk" -type f | head -n1 | \
+            xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-android-arm64-v8a.apk" 2>/dev/null || true
+          find ./artifacts/android -path "*arm*" -name "*.apk" -not -path "*arm64*" -type f | head -n1 | \
+            xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-android-armeabi-v7a.apk" 2>/dev/null || true
+          find ./artifacts/android -path "*x86_64*" -name "*.apk" -type f | head -n1 | \
+            xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-android-x86_64.apk" 2>/dev/null || true
+          find ./artifacts/android -path "*x86*" -name "*.apk" -not -path "*x86_64*" -type f | head -n1 | \
+            xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-android-x86.apk" 2>/dev/null || true
+
           echo "=== Final release assets ==="
           ls -la ./artifacts/out
 

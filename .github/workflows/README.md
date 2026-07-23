@@ -24,7 +24,7 @@ This will:
 
 1. Build both Windows and Android versions
 2. Publish a **real** (non-pre-) release named like `Local Share v2026.07.23-18` (date + run number)
-3. Attach all artifacts with clean names: MSI installer, NSIS `.exe` setup, portable `.zip`, and the universal APK
+3. Attach all artifacts with clean names: MSI installer, NSIS `.exe` setup, portable `.zip`, and per-ABI APKs (universal, arm64-v8a, armeabi-v7a, x86_64, x86)
 4. Fill the release notes with the commit messages from that push
 
 You can also run it manually from the Actions tab → "Run workflow" (`workflow_dispatch`).
@@ -143,7 +143,12 @@ gh release list --json tagName -q '.[].tagName' | grep '^build-' | xargs -I{} gh
 
 **Android:**
 
-- APK: `src-tauri/gen/android/app/build/outputs/apk/**/*.apk`
+- Universal APK: `src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk`
+- Per-ABI APKs: `src-tauri/gen/android/app/build/outputs/apk/<abi>/release/*.apk`
+  - `arm64` → `Local-Share-<TAG>-android-arm64-v8a.apk`
+  - `arm` → `Local-Share-<TAG>-android-armeabi-v7a.apk`
+  - `x86_64` → `Local-Share-<TAG>-android-x86_64.apk`
+  - `x86` → `Local-Share-<TAG>-android-x86.apk`
 
 ### Best Practices
 
