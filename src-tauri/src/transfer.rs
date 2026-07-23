@@ -10,7 +10,7 @@ use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 #[cfg(target_os = "android")]
-use tauri_plugin_android_fs::{AndroidFsExt, FileUri};
+use tauri_plugin_android_fs::{AndroidFsExt, FsUri};
 #[cfg(target_os = "android")]
 use tauri_plugin_fs::FilePath;
 
@@ -70,11 +70,11 @@ pub async fn send_file(
         if file_path.starts_with("content://") {
             let api = app.android_fs_async();
 
-            // Convert String content URI to FileUri via FilePath
+            // Convert String content URI to FsUri via FilePath
             let url = url::Url::parse(&file_path)
                 .map_err(|e| format!("Failed to parse content URI: {}", e))?;
             let fs_path = FilePath::Url(url);
-            let uri: FileUri = fs_path.into();
+            let uri: FsUri = fs_path.into();
 
             // Get file name from Android FS API
             let name = api

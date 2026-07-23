@@ -201,7 +201,7 @@ fn generate_random_name() -> String {
 async fn scan_media_file(app: AppHandle, path: String) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        use tauri_plugin_android_fs::{AndroidFsExt, FileUri};
+        use tauri_plugin_android_fs::{AndroidFsExt, FsUri};
         use tauri_plugin_fs::FilePath;
 
         // Use the Android FS plugin to scan the file
@@ -209,7 +209,7 @@ async fn scan_media_file(app: AppHandle, path: String) -> Result<(), String> {
         let url =
             url::Url::parse(&path).map_err(|e| format!("Failed to parse content URI: {}", e))?;
         let fs_path = FilePath::Url(url);
-        let uri: FileUri = fs_path.into();
+        let uri: FsUri = fs_path.into();
         api.public_storage()
             .scan(&uri)
             .await
@@ -261,12 +261,12 @@ async fn get_file_metadata(app: AppHandle, file_path: String) -> Result<FileMeta
     let size = if file_path.starts_with("content://") {
         #[cfg(target_os = "android")]
         {
-            use tauri_plugin_android_fs::{AndroidFsExt, FileUri};
+            use tauri_plugin_android_fs::{AndroidFsExt, FsUri};
             use tauri_plugin_fs::FilePath;
             let api = app.android_fs_async();
             let url = url::Url::parse(&file_path).map_err(|e| e.to_string())?;
             let fs_path = FilePath::Url(url);
-            let uri: FileUri = fs_path.into();
+            let uri: FsUri = fs_path.into();
             let metadata = api.get_metadata(&uri).await.map_err(|e| e.to_string())?;
             metadata.len()
         }
@@ -291,7 +291,7 @@ async fn get_file_name(app: AppHandle, file_path: String) -> Result<String, Stri
     if file_path.starts_with("content://") {
         #[cfg(target_os = "android")]
         {
-            use tauri_plugin_android_fs::{AndroidFsExt, FileUri};
+            use tauri_plugin_android_fs::{AndroidFsExt, FsUri};
             use tauri_plugin_fs::FilePath;
 
             // Use the Android FS plugin to get the file name from the URI
@@ -299,7 +299,7 @@ async fn get_file_name(app: AppHandle, file_path: String) -> Result<String, Stri
             let url = url::Url::parse(&file_path)
                 .map_err(|e| format!("Failed to parse content URI: {}", e))?;
             let fs_path = FilePath::Url(url);
-            let uri: FileUri = fs_path.into();
+            let uri: FsUri = fs_path.into();
             return match api.get_name(&uri).await {
                 Ok(name) => Ok(name),
                 Err(e) => {
