@@ -11,7 +11,7 @@ Android requires every APK/AAB to be **signed** before it can be installed or up
 If the keystore is already in place (it is, in this repo):
 
 ```bash
-npm run tauri android build --split-per-abi --apk true
+npm run tauri android build --split-per-abi --apk
 ```
 
 Output (per architecture):
@@ -23,7 +23,7 @@ src-tauri/gen/android/app/build/outputs/apk/<arch>/release/app-<arch>-release.ap
 For a single universal APK instead:
 
 ```bash
-npm run tauri android build --apk true
+npm run tauri android build --apk
 # -> .../apk/universal/release/app-universal-release.apk
 ```
 
@@ -43,16 +43,16 @@ The keystore, its credentials, and the Gradle config that wires them up are **al
 
 **The locked key's identity** (use this to verify nothing has changed):
 
-| Field | Value |
-|---|---|
-| Keystore type | PKCS12 |
-| Alias | `upload` |
-| Store password | `android` |
-| Key password | `android` |
-| Owner (DN) | `CN=Tauri App, OU=Development, O=MyCompany, L=City, ST=State, C=US` |
-| Valid | 2025-12-11 → **2053-04-28** |
-| Signature algorithm | `SHA384withRSA` |
-| **SHA1 fingerprint** | `82:30:39:75:1B:D9:28:2B:C8:9E:10:6C:D5:43:A1:13:C7:1C:7A:49` |
+| Field                | Value                                                               |
+| -------------------- | ------------------------------------------------------------------- |
+| Keystore type        | PKCS12                                                              |
+| Alias                | `upload`                                                            |
+| Store password       | `android`                                                           |
+| Key password         | `android`                                                           |
+| Owner (DN)           | `CN=Tauri App, OU=Development, O=MyCompany, L=City, ST=State, C=US` |
+| Valid                | 2025-12-11 → **2053-04-28**                                         |
+| Signature algorithm  | `SHA384withRSA`                                                     |
+| **SHA1 fingerprint** | `82:30:39:75:1B:D9:28:2B:C8:9E:10:6C:D5:43:A1:13:C7:1C:7A:49`       |
 
 Verify at any time:
 
@@ -60,7 +60,7 @@ Verify at any time:
 keytool -list -v -keystore src-tauri/gen/android/app/upload-keystore.jks -storepass android
 ```
 
-If the SHA1 ever differs from the value above, **the keystore was regenerated** — see *Do not break this*.
+If the SHA1 ever differs from the value above, **the keystore was regenerated** — see _Do not break this_.
 
 ---
 
@@ -82,7 +82,7 @@ src-tauri/gen/android/
 Repo-root files that are **not** active mechanisms, just helpers/docs:
 
 - `ANDROID_SIGNING.md` — this file.
-- `generate-android-keystore.sh` / `.bat` — one-shot scripts to regenerate a dev keystore. **Dangerous** to the committed identity; see *Do not break this*.
+- `generate-android-keystore.sh` / `.bat` — one-shot scripts to regenerate a dev keystore. **Dangerous** to the committed identity; see _Do not break this_.
 
 ### `key.properties`
 
@@ -151,18 +151,18 @@ The `build-android` job has a "Setup Android Keystore" step with **two branches*
 1. **If `ANDROID_KEYSTORE_BASE64` secret is set** → it is base64-decoded to `app/upload-keystore.jks`, and `key.properties` is written from the secrets. This is the production-key path.
 2. **Else** → the step runs `keytool` to generate a **brand-new debug keystore on every run**, overwriting the committed `app/upload-keystore.jks` and `key.properties` on the runner.
 
-> ⚠️ **Drift landmine:** if the `ANDROID_KEYSTORE_BASE64` secret is **not** set, every CI run signs with a *different throwaway key* than your local builds (and a different one each run). Installing a CI build over a local build — or over a previous CI build — then fails with a signature mismatch and forces a full reinstall.
+> ⚠️ **Drift landmine:** if the `ANDROID_KEYSTORE_BASE64` secret is **not** set, every CI run signs with a _different throwaway key_ than your local builds (and a different one each run). Installing a CI build over a local build — or over a previous CI build — then fails with a signature mismatch and forces a full reinstall.
 >
 > For **consistent local ↔ CI signatures**, the `ANDROID_KEYSTORE_BASE64` secret must contain the **committed** keystore's bytes, and the password/alias secrets must match (`android` / `android` / `upload`).
 
 The four CI secrets:
 
-| Secret | Meaning |
-|---|---|
-| `ANDROID_KEYSTORE_BASE64` | Base64 of the `.jks` file (`base64 upload-keystore.jks`) |
-| `ANDROID_KEYSTORE_PASSWORD` | Keystore password (`android` for the dev key) |
-| `ANDROID_KEY_PASSWORD` | Key password (`android` for the dev key) |
-| `ANDROID_KEY_ALIAS` | Key alias (`upload` for the dev key) |
+| Secret                      | Meaning                                                  |
+| --------------------------- | -------------------------------------------------------- |
+| `ANDROID_KEYSTORE_BASE64`   | Base64 of the `.jks` file (`base64 upload-keystore.jks`) |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password (`android` for the dev key)            |
+| `ANDROID_KEY_PASSWORD`      | Key password (`android` for the dev key)                 |
+| `ANDROID_KEY_ALIAS`         | Key alias (`upload` for the dev key)                     |
 
 To check whether they are set (read-only):
 
@@ -241,7 +241,7 @@ storeFile=upload-keystore.jks
 
 ### 3. Confirm `build.gradle.kts` has the signing config
 
-It already does in this repo (see *The signing files*). On a fresh project, paste the `signingConfigs` + release-`buildType` block from that section.
+It already does in this repo (see _The signing files_). On a fresh project, paste the `signingConfigs` + release-`buildType` block from that section.
 
 ### 4. Verify
 
@@ -262,7 +262,7 @@ adb devices                                                     # confirm device
 adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
 ```
 
-**Manually:** copy the `.apk` to the device, enable *Install from Unknown Sources*, and open it with a file manager.
+**Manually:** copy the `.apk` to the device, enable _Install from Unknown Sources_, and open it with a file manager.
 
 ---
 
@@ -280,7 +280,7 @@ The release APK was built without signing — `key.properties` is missing or the
 
 - Confirm `src-tauri/gen/android/key.properties` exists and has all four keys.
 - Confirm `build.gradle.kts` wires `signingConfigs.getByName("release")` into the `release` buildType.
-- Clean and rebuild: `npm run tauri android build --apk true` (remove stale outputs under `app/build/` if needed).
+- Clean and rebuild: `npm run tauri android build --apk` (remove stale outputs under `app/build/` if needed).
 
 ### `Wrong password` / `keystore was tampered with`
 
@@ -297,7 +297,7 @@ The release APK was built without signing — `key.properties` is missing or the
 
 The new APK was signed with a **different key** than the one already on the device. Causes:
 
-- CI built it without the `ANDROID_KEYSTORE_BASE64` secret → throwaway debug key (see *CI*).
+- CI built it without the `ANDROID_KEYSTORE_BASE64` secret → throwaway debug key (see _CI_).
 - Someone regenerated the committed keystore.
 - You are mixing a debug build and a release build.
 
@@ -318,7 +318,7 @@ adb devices                                         # device reachable
 
 This project has **not** done this. Use it only if you are publishing to the Play Store or making the repo public. Once you upload a release key to Play, **you can never change it** — back it up in 3+ secure locations first.
 
-1. Generate a strong production keystore locally (see *First-time setup*, production variant).
+1. Generate a strong production keystore locally (see _First-time setup_, production variant).
 2. Add it to GitHub as the four secrets (`ANDROID_KEYSTORE_BASE64` = `base64 production-keystore.jks`, plus the strong passwords and alias). See README for the secret names.
 3. Uncomment the signing lines in `src-tauri/gen/android/.gitignore`:
    ```gitignore
@@ -352,7 +352,7 @@ This project has **not** done this. Use it only if you are publishing to the Pla
 
 ```bash
 # Build a signed release APK
-npm run tauri android build --split-per-abi --apk true
+npm run tauri android build --split-per-abi --apk
 
 # Inspect the keystore identity
 keytool -list -v -keystore src-tauri/gen/android/app/upload-keystore.jks -storepass android

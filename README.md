@@ -62,7 +62,7 @@ npm run tauri build
 npm run tauri android init
 
 # Build signed APK
-npm run tauri android build -- --split-per-abi --apk true
+npm run tauri android build -- --split-per-abi --apk
 ```
 
 With --split-per-abi
@@ -79,7 +79,7 @@ my-app-x86.apk                 (15 MB)  ← Rare devices
 Can also use
 
 ```bash
---apk true or --aab true - Explicitly specify which format to build
+--apk or --aab true - Explicitly specify which format to build
 
 -t <target> - Specify target architectures (e.g., aarch64, armv7, etc.)
 ```
