@@ -5,7 +5,8 @@ mod transfer;
 
 use crate::config::{generate_anime_name, load_config, save_config, AppConfig};
 use crate::discovery::{
-    refresh_discovery, register_service, reregister_service_alias, start_discovery, update_alias,
+    refresh_discovery, register_service, reregister_service_alias, start_discovery,
+    unregister_service, update_alias,
 };
 use crate::server::start_server;
 use crate::transfer::{send_file, send_file_bytes, send_text};
@@ -458,6 +459,22 @@ pub fn run() {
             open_file_location,
             request_batch_transfer_to_peer
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // On graceful exit, announce ourselves gone so every other client
+            // drops us immediately via an mDNS goodbye (TTL=0) instead of
+            // waiting for the staleness sweep. Without this, closing the app
+            // just kills the process and our service lingers on the network
+            // until its TTL expires. `unregister()` is best-effort: if it fails
+            // the app is exiting anyway.
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                let state = app_handle.state::<AppState>();
+                let alias = state.config.lock().unwrap().alias.clone();
+                let daemon = state.service_daemon.lock().unwrap();
+                if let Some(daemon) = daemon.as_ref() {
+                    unregister_service(daemon, &alias);
+                }
+            }
+        });
 }

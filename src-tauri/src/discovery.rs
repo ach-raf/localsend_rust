@@ -25,6 +25,19 @@ pub struct Peer {
     pub port: u16,
     pub alias: String,
     pub hostname: String,
+    /// When this peer was last (re-)resolved over mDNS. Internal-only: drives
+    /// the staleness sweep so a killed/crashed peer is evicted instead of
+    /// lingering as a ghost entry. Never sent to the frontend.
+    #[serde(skip, default = "default_last_seen")]
+    pub last_seen: Instant,
+}
+
+/// Default for the serde-skipped `last_seen`. `Instant` has no `Default` impl,
+/// so serde needs an explicit constructor for the skipped field. Only ever used
+/// if a `Peer` were deserialized (it isn't in practice — the frontend only
+/// receives peers), so the exact value is irrelevant; "now" is a safe choice.
+fn default_last_seen() -> Instant {
+    Instant::now()
 }
 
 enum DiscoveryCommand {
@@ -35,8 +48,22 @@ enum DiscoveryCommand {
 /// How often we proactively re-send the mDNS query. mDNS is request/response:
 /// a device that started browsing *before* a peer appeared would otherwise
 /// never ask again, so a newcomer stays invisible until someone hits Refresh.
-/// 30s keeps that latency low without flooding the network with multicast.
-const REQUERY_INTERVAL: Duration = Duration::from_secs(30);
+/// 15s keeps that latency low. Each query is a single ~100-byte multicast
+/// packet, so the cost is negligible — the value also doubles as the heartbeat
+/// cadence for `PEER_STALE_TIMEOUT` below.
+const REQUERY_INTERVAL: Duration = Duration::from_secs(15);
+
+/// How long a peer can go unseen before we evict it from the list. mDNS itself
+/// only forgets a service on a goodbye packet (graceful exit) — and our own
+/// `restart_browse` calls `stop_browse`, which silently wipes mdns-sd's cache
+/// AND drops the querier, so mdns-sd never even gets to emit `ServiceRemoved`
+/// for a vanished peer. We therefore MUST evict ourselves. We use the periodic
+/// re-query as a heartbeat: a live peer re-resolves within every
+/// `REQUERY_INTERVAL`, refreshing `last_seen`. The timeout must stay ABOVE the
+/// re-query interval so a live peer that just answered isn't wrongly evicted
+/// (which would cause flicker); 2× gives a comfortable margin while still
+/// removing a closed/crashed peer within ~30s.
+const PEER_STALE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Re-send the multicast query by stopping the current browse and starting a
 /// fresh one. This is exactly what the manual Refresh button does, and what we
@@ -169,6 +196,14 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
                     receiver_opt = Some(receiver);
                 }
             }
+
+            // Evict peers that haven't re-announced within PEER_STALE_TIMEOUT.
+            // mDNS only forgets a service via a goodbye packet (graceful exit) or
+            // its ~75-min TTL; a killed/crashed/disconnected peer sends no
+            // goodbye and would otherwise linger as a ghost. The periodic
+            // re-query is our heartbeat: live peers re-resolve within ~30s, so
+            // anything unseen for 90s is genuinely gone.
+            sweep_stale_peers(&app, &peers_map_clone);
         }
     });
 }
@@ -249,6 +284,10 @@ fn process_mdns_event(
                     port,
                     alias: alias.clone(),
                     hostname: hostname.clone(),
+                    // Refresh the heartbeat on every (re-)resolve — including the
+                    // periodic 30s re-query, which keeps live peers fresh and is
+                    // exactly what the staleness sweep keys off.
+                    last_seen: Instant::now(),
                 };
 
                 let mut peers = peers_map.lock().unwrap();
@@ -291,6 +330,48 @@ fn process_mdns_event(
 fn emit_peers(app: &AppHandle, peers: &Arc<Mutex<HashMap<String, Peer>>>) {
     let list: Vec<Peer> = peers.lock().unwrap().values().cloned().collect();
     let _ = app.emit("peers-update", list);
+}
+
+/// Drop peers that haven't re-announced within `PEER_STALE_TIMEOUT` and push the
+/// trimmed list to the frontend. Cheap: a single pass over (typically <10)
+/// entries, so it's safe to run on every loop iteration. Only emits when
+/// something actually changed, so it never causes needless UI churn.
+fn sweep_stale_peers(app: &AppHandle, peers: &Arc<Mutex<HashMap<String, Peer>>>) {
+    let now = Instant::now();
+    let mut removed_any = false;
+    let stale_keys: Vec<String> = {
+        let peers = peers.lock().unwrap();
+        peers
+            .iter()
+            .filter(|(_, p)| now.duration_since(p.last_seen) >= PEER_STALE_TIMEOUT)
+            .map(|(k, p)| {
+                eprintln!(
+                    "Peer stale (last seen {:?} ago), evicting: {} ({})",
+                    now.duration_since(p.last_seen),
+                    p.alias,
+                    k
+                );
+                k.clone()
+            })
+            .collect()
+    };
+
+    if stale_keys.is_empty() {
+        return;
+    }
+
+    {
+        let mut peers = peers.lock().unwrap();
+        for key in &stale_keys {
+            if peers.remove(key).is_some() {
+                removed_any = true;
+            }
+        }
+    }
+
+    if removed_any {
+        emit_peers(app, peers);
+    }
 }
 
 // Function to register the service (broadcast presence)
@@ -345,6 +426,59 @@ pub fn register_service(alias: &str, port: u16) -> Result<ServiceDaemon, String>
 
     eprintln!("  Service registered successfully!");
     Ok(daemon)
+}
+
+/// Announce that we are going offline by sending an mDNS goodbye (TTL=0) for
+/// our own service. Every other client's mdns-sd receives it and immediately
+/// emits `ServiceRemoved`, so we vanish from their peer list the instant we
+/// quit — no 30s timeout wait.
+///
+/// This is the counterpart to `register_service`: it uses `unregister()` on the
+/// SAME daemon instance, not `shutdown()` — `shutdown()` tears the daemon down
+/// WITHOUT sending a goodbye, which would defeat the whole point.
+///
+/// IMPORTANT: `daemon.unregister()` only ENQUEUES the goodbye on the mdns-sd
+/// daemon thread's command queue; it does NOT block until the packet is sent.
+/// If we return immediately, the main thread exits and the OS tears the process
+/// (and the daemon thread) down before the goodbye ever goes out — which is
+/// exactly the bug where quitting one client never removed it from the other.
+/// mdns-sd sends the packet synchronously inside the daemon thread and only
+/// THEN replies `UnregisterStatus::OK` on the returned receiver, so we block on
+/// that receiver: once it yields, the goodbye has been multicast. A bounded
+/// wait means a wedged daemon can never hang app shutdown.
+///
+/// NOTE: this only covers graceful exits (closing the window, Quit menu, OS
+/// asking the app to terminate). A killed/crashed process sends no goodbye, so
+/// the `last_seen` staleness sweep in `start_discovery` remains as the safety
+/// net for those cases.
+pub fn unregister_service(daemon: &ServiceDaemon, alias: &str) {
+    let service_type = "_myshare_app._tcp.local.";
+    let fullname = format!("{}.{}", alias, service_type);
+    eprintln!("Sending mDNS goodbye (unregister) for: {}", fullname);
+
+    match daemon.unregister(&fullname) {
+        Ok(receiver) => {
+            // Block until the daemon has actually multicast the goodbye packet,
+            // or give up after a bounded wait if the daemon is stuck. mdns-sd
+            // only reports OK after sending, so a successful recv guarantees the
+            // packet is on the wire (in the kernel's send buffer, at minimum).
+            match receiver.recv_timeout(Duration::from_millis(500)) {
+                Ok(status) => eprintln!("mDNS goodbye sent: {:?}", status),
+                Err(e) => eprintln!(
+                    "Warning: timed out / error waiting for goodbye to send: {}. \
+                     The packet may not have been transmitted before exit.",
+                    e
+                ),
+            }
+            // Tiny grace period so the kernel flushes the multicast UDP packet
+            // to the NIC before the process tears down. UDP send is normally
+            // synchronous into the kernel buffer, so this is mostly insurance.
+            thread::sleep(Duration::from_millis(50));
+        }
+        Err(e) => {
+            eprintln!("Warning: failed to enqueue unregister on exit: {}", e);
+        }
+    }
 }
 
 /// Re-register our service under a new alias on an EXISTING daemon, without
