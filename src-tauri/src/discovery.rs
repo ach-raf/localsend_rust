@@ -2,6 +2,7 @@ use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::TcpStream;
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -45,6 +46,14 @@ enum DiscoveryCommand {
     UpdateAlias(String),
 }
 
+/// Same shape as `DiscoveryCommand`, but for the liveness-probe worker. Kept
+/// separate from the mDNS control channel so a slow probe round can never
+/// block mDNS event processing (they live on different threads + channels).
+enum ProbeCommand {
+    /// Re-probe every known peer immediately (manual refresh).
+    ProbeNow,
+}
+
 /// How often we proactively re-send the mDNS query. mDNS is request/response:
 /// a device that started browsing *before* a peer appeared would otherwise
 /// never ask again, so a newcomer stays invisible until someone hits Refresh.
@@ -64,6 +73,19 @@ const REQUERY_INTERVAL: Duration = Duration::from_secs(15);
 /// (which would cause flicker); 2× gives a comfortable margin while still
 /// removing a closed/crashed peer within ~30s.
 const PEER_STALE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How often the background liveness probe re-checks every known peer. Each
+/// probe is a plain TCP connect to the peer's known HTTP port — no HTTP layer,
+/// no payload, no TLS. A running peer's listen socket accepts immediately; a
+/// quit/crashed/network-dropped peer refuses (instant) or times out. Removals
+/// flow through the normal `peers-update` event, so the UI refreshes on its own.
+const ACTIVE_PROBE_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Per-peer connect timeout. 1.5s is long enough to ride out a briefly busy
+/// peer, yet short enough that a dead peer is reported within the visible
+/// ~2.3s refresh window (1.5s probe + 0.8s spinner). Longer would let dead
+/// peers survive a manual refresh.
+const PROBE_CONNECT_TIMEOUT: Duration = Duration::from_millis(1500);
 
 /// Re-send the multicast query by stopping the current browse and starting a
 /// fresh one. This is exactly what the manual Refresh button does, and what we
@@ -148,6 +170,53 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
         // REQUERY_INTERVAL, instead of waiting for a manual Refresh.
         let mut last_query = Instant::now();
 
+        // ---- Active liveness probe worker ---------------------------------
+        //
+        // mDNS discovery cannot, by itself, detect a peer that vanished without
+        // sending a goodbye packet (process killed, network dropped, machine
+        // crashed). `restart_browse` even wipes mdns-sd's cache, so we never get
+        // a `ServiceRemoved` for such peers — they linger as ghosts until the
+        // 30s staleness sweep finally evicts them. That makes the manual
+        // Refresh button feel broken: you tap it right after a peer dies and the
+        // ghost is still there.
+        //
+        // This worker fixes that by actively TCP-connecting to each known
+        // peer's HTTP port on two triggers:
+        //   - the 30s background timer (always-on safety net), and
+        //   - an immediate `ProbeNow` poked by the Refresh command (so a tap
+        //     on the button / pull-to-refresh detects a dead peer within the
+        //     spinner window).
+        // A running peer's listen socket accepts instantly; a dead one refuses
+        // or times out, and we remove it via the normal `peers-update` event.
+        let (probe_tx, probe_rx) = channel::<ProbeCommand>();
+        let probe_trigger: Option<Sender<ProbeCommand>> = Some(probe_tx);
+        let probe_app = app.clone();
+        let probe_peers = peers_map_clone.clone();
+        thread::spawn(move || {
+            // The recv_timeout doubles as the periodic timer: we block until
+            // either a manual `ProbeNow` arrives or the interval elapses,
+            // whichever comes first. This keeps manual-refresh latency at a
+            // minimum (no fixed poll delay) while still firing on schedule.
+            let mut last_probe = Instant::now();
+            loop {
+                let wait = ACTIVE_PROBE_INTERVAL
+                    .saturating_sub(last_probe.elapsed());
+                match probe_rx.recv_timeout(wait) {
+                    Ok(ProbeCommand::ProbeNow) => {
+                        eprintln!("Active probe: triggered by refresh");
+                        last_probe = Instant::now();
+                        run_active_probe(&probe_app, &probe_peers);
+                    }
+                    Err(_) => {
+                        // Timeout — the periodic interval elapsed.
+                        last_probe = Instant::now();
+                        run_active_probe(&probe_app, &probe_peers);
+                    }
+                }
+            }
+        });
+        // -------------------------------------------------------------------
+
         loop {
             // Handle control commands (non-blocking)
             match cmd_receiver.try_recv() {
@@ -158,6 +227,14 @@ pub fn start_discovery(app: AppHandle, my_alias: String) {
                     eprintln!("Refresh: re-querying mDNS (peer list preserved)");
                     receiver_opt = restart_browse(&daemon, service_type);
                     last_query = Instant::now();
+
+                    // Also kick an active liveness probe so a peer that quit
+                    // WITHOUT sending a goodbye (crash, network drop, OS kill)
+                    // is evicted now instead of lingering up to 30s. mDNS alone
+                    // can't tell us a peer is gone — its listen socket can.
+                    if let Some(tx) = probe_trigger.as_ref() {
+                        let _ = tx.send(ProbeCommand::ProbeNow);
+                    }
                 }
                 Ok(DiscoveryCommand::UpdateAlias(new_alias)) => {
                     eprintln!("Alias update command received: {}", new_alias);
@@ -332,10 +409,114 @@ fn emit_peers(app: &AppHandle, peers: &Arc<Mutex<HashMap<String, Peer>>>) {
     let _ = app.emit("peers-update", list);
 }
 
+/// Actively verify a peer is still reachable by opening a TCP connection to
+/// its known HTTP port. We use a raw `TcpStream` rather than an HTTP GET
+/// (`/ping`) because all we need to know is whether something is *listening*:
+/// a quit/crashed peer's socket is closed and the kernel refuses the SYN
+/// (or, on a dropped network, the connect times out). Avoiding the HTTP layer
+/// keeps each probe a single round-trip with no framing overhead. Returns
+/// `true` if the peer answered.
+fn probe_peer(ip: &str, port: u16) -> bool {
+    let addr = format!("{}:{}", ip, port);
+    match TcpStream::connect_timeout(
+        &match addr.parse() {
+            Ok(socket_addr) => socket_addr,
+            Err(e) => {
+                eprintln!("Probe {}: unparseable address '{}': {}", ip, addr, e);
+                return false;
+            }
+        },
+        PROBE_CONNECT_TIMEOUT,
+    ) {
+        Ok(_) => {
+            eprintln!("Probe {}: alive", addr);
+            true
+        }
+        Err(e) => {
+            eprintln!("Probe {}: unreachable ({})", addr, e);
+            false
+        }
+    }
+}
+
+/// Probe every currently-known peer in parallel and remove the unreachable
+/// ones, emitting a single `peers-update` if anything changed. Runs on a
+/// dedicated worker thread so a large peer set can't stall the mDNS loop or
+/// the UI. We snapshot the peer list under the lock, probe concurrently, then
+/// take the lock again only to apply removals — minimizing contention.
+fn run_active_probe(app: &AppHandle, peers: &Arc<Mutex<HashMap<String, Peer>>>) {
+    // Snapshot (key, ip, port) so we can probe without holding the lock.
+    let snapshot: Vec<(String, String, u16)> = {
+        let peers = peers.lock().unwrap();
+        peers
+            .iter()
+            .map(|(k, p)| (k.clone(), p.ip.clone(), p.port))
+            .collect()
+    };
+
+    if snapshot.is_empty() {
+        return;
+    }
+
+    // Probe each peer on its own thread so the per-peer timeout (1.5s) runs
+    // concurrently rather than serially — N peers still resolve in ~1.5s, not N×1.5s.
+    // `thread::scope` guarantees every spawned thread is joined before we touch
+    // `dead_keys`, so the borrows are safe without manual Arc/Clone plumbing.
+    let dead_keys: Vec<String> = thread::scope(|s| {
+        let handles: Vec<_> = snapshot
+            .into_iter()
+            .map(|(key, ip, port)| {
+                s.spawn(move || {
+                    if probe_peer(&ip, port) {
+                        None
+                    } else {
+                        Some(key)
+                    }
+                })
+            })
+            .collect();
+
+        handles
+            .into_iter()
+            .filter_map(|h| h.join().ok().flatten())
+            .collect()
+    });
+
+    if dead_keys.is_empty() {
+        return;
+    }
+
+    let removed_any = {
+        let mut peers = peers.lock().unwrap();
+        let mut changed = false;
+        for key in &dead_keys {
+            if peers.remove(key).is_some() {
+                eprintln!(
+                    "Active probe: evicting dead peer {} (mDNS did not report removal)",
+                    key
+                );
+                changed = true;
+            }
+        }
+        changed
+    };
+
+    if removed_any {
+        emit_peers(app, peers);
+    }
+}
+
 /// Drop peers that haven't re-announced within `PEER_STALE_TIMEOUT` and push the
 /// trimmed list to the frontend. Cheap: a single pass over (typically <10)
 /// entries, so it's safe to run on every loop iteration. Only emits when
 /// something actually changed, so it never causes needless UI churn.
+///
+/// This is the TTL-based *fallback*. The primary liveness signal is the active
+/// TCP probe (`run_active_probe`): it catches a vanished peer within ~1.5s on
+/// a manual refresh and every `ACTIVE_PROBE_INTERVAL` in the background. The
+/// sweep still runs so a peer that slips past the probe (e.g. one whose port
+/// is open but whose app is wedged and no longer re-announcing) is eventually
+/// evicted by absence of mDNS re-resolves too.
 fn sweep_stale_peers(app: &AppHandle, peers: &Arc<Mutex<HashMap<String, Peer>>>) {
     let now = Instant::now();
     let mut removed_any = false;
