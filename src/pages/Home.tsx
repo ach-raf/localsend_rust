@@ -661,13 +661,14 @@ export default function Home() {
       return false;
     }
   }, []);
-  const {
-    refreshing: ptrRefreshing,
-    pullDistance,
-    armed: ptrArmed,
-  } = usePullToRefresh({
+  // Refs the hook drives directly (no React renders during the drag).
+  const ptrContentRef = useRef<HTMLDivElement>(null);
+  const ptrSpinnerRef = useRef<HTMLDivElement>(null);
+  const { refreshing: ptrRefreshing, armed: ptrArmed } = usePullToRefresh({
     enabled: ptrEnabled,
     onRefresh: refreshPeers,
+    contentRef: ptrContentRef,
+    spinnerRef: ptrSpinnerRef,
   });
 
   const handleAcceptTransfer = async () => {
@@ -725,28 +726,25 @@ export default function Home() {
 
   return (
     <>
-      {/* Pull-to-refresh indicator (Android only). Sits above the content and is
-          revealed as the content is dragged down. Fixed under the 64px mobile
-          header; never rendered on desktop. */}
-      {ptrEnabled && (pullDistance > 0 || ptrRefreshing) && (
+      {/* Pull-to-refresh indicator (Android only). Always mounted when enabled;
+          its opacity/scale are driven by the --ptr-progress CSS variable set by
+          the hook, so revealing it costs no React renders. */}
+      {ptrEnabled && (
         <div
-          className="ptr-indicator"
+          className={`ptr-indicator${ptrRefreshing ? " is-refreshing" : ""}`}
           aria-hidden="true"
           style={{ top: `calc(64px + env(safe-area-inset-top, 0px))` }}
         >
           <ThemeIcon
             size={36}
-            variant="light"
+            variant={ptrArmed || ptrRefreshing ? "filled" : "light"}
             color="phosphor"
             radius="xl"
             className={ptrRefreshing ? "ptr-spinner" : ""}
-            style={{
-              transform: ptrRefreshing
-                ? undefined
-                : `rotate(${Math.min(pullDistance, 180)}deg)`,
-            }}
           >
-            <IconRefresh size={20} />
+            <div ref={ptrSpinnerRef} style={{ display: "grid", placeItems: "center" }}>
+              <IconRefresh size={20} />
+            </div>
           </ThemeIcon>
           <Text size="xs" c="dimmed" mt={6}>
             {ptrRefreshing
@@ -759,18 +757,11 @@ export default function Home() {
       )}
 
       <Container
+        ref={ptrContentRef}
         size="100%"
         px={{ base: "xs", sm: "md", lg: "xl" }}
         pt={{ base: "md", sm: 0 }}
         className="animate-[fadeIn_250ms_ease-out]"
-        style={
-          ptrEnabled && (pullDistance > 0 || ptrRefreshing)
-            ? {
-                transform: `translateY(${pullDistance}px)`,
-                transition: pullDistance === 0 ? "transform 0.2s ease-out" : "none",
-              }
-            : undefined
-        }
       >
         <Grid gutter={{ base: "xs", sm: "md", lg: "lg" }}>
           {/* Mobile: Single column that switches content. Desktop: Side-by-side */}

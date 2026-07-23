@@ -675,6 +675,8 @@ body {
    PULL-TO-REFRESH (touch / Android)
    The content is translated down by the gesture (see usePullToRefresh); this
    indicator is fixed under the header and revealed in the gap that opens.
+   Visibility is driven by the --ptr-progress CSS variable (0..1) the hook
+   publishes, so revealing it costs zero React renders.
    ============================================ */
 
 .ptr-indicator {
@@ -688,10 +690,19 @@ body {
   align-items: center;
   justify-content: flex-end;
   pointer-events: none; /* never intercept taps */
+  opacity: var(--ptr-progress, 0);
+  transform: translateY(calc((1 - var(--ptr-progress, 0)) * 6px));
+  transition: opacity 0.18s ease-out;
+}
+
+/* Fully shown while a refresh is in flight, regardless of progress. */
+.ptr-indicator.is-refreshing {
+  opacity: 1;
+  transform: none;
 }
 
 .ptr-spinner {
-  animation: ptr-spin 0.9s linear infinite;
+  animation: ptr-spin 0.8s linear infinite;
 }
 
 @keyframes ptr-spin {
@@ -704,4 +715,9 @@ body {
   .ptr-spinner {
     animation: none;
   }
+  .ptr-indicator {
+    transition: none;
+    transform: none;
+  }
 }
+

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 /**
  * Pull-to-refresh for touch devices.
@@ -8,13 +8,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * scrolled to the very top; below the fold, native scrolling wins and the
  * gesture is ignored so it never competes with reading a long peer list.
  *
- * The dragged content is translated with elastic damping (the pull gets harder
- * the further you drag, like the native feel), and snapping back is animated
- * with a CSS transition. The indicator is surfaced via `pullDistance` so the
- * caller can render whatever spinner/text it likes.
+ * ## Why this drives the DOM directly
+ * touchmove fires ~60-120×/s. If each event went through React state the whole
+ * host tree would re-render on every frame and the gesture would jank. Instead
+ * the content's translateY and the spinner's rotation are written straight to
+ * the DOM via refs (compositor-friendly, frame-accurate), and React only learns
+ * about *discrete* transitions — `armed` (crossed the threshold) and
+ * `refreshing` (a refresh is in flight). The continuous pull strength is also
+ * published as a `--ptr-progress` CSS variable (0..1) so the caller's indicator
+ * can fade/scale in CSS without any re-render.
  *
- * `prefers-reduced-motion` is honored: the gesture still triggers a refresh but
- * the caller is expected to skip the elastic transform when it is set.
+ * `prefers-reduced-motion` is honored in CSS (spinner/transition disabled).
  */
 
 interface PullToRefreshOptions {
@@ -28,33 +32,38 @@ interface PullToRefreshOptions {
   onRefresh: () => Promise<void> | void;
   /** Only active when true. Use this to gate the hook to touch/Android. */
   enabled?: boolean;
+  /** The scrollable content element, translated vertically during the pull. */
+  contentRef: RefObject<HTMLElement | null>;
+  /** The refresh icon: rotated while pulling, spun by CSS while refreshing. */
+  spinnerRef?: RefObject<HTMLElement | null>;
 }
 
 interface PullToRefreshResult {
   /** Whether a refresh is currently in-flight (for showing a spinner). */
   refreshing: boolean;
-  /** Current damped pull distance in px (0 when idle). Drives the indicator. */
-  pullDistance: number;
-  /** Whether the pull has crossed the threshold (for styling "release to refresh"). */
+  /** Whether the pull has crossed the threshold (for "release to refresh"). */
   armed: boolean;
 }
 
 export function usePullToRefresh({
-  threshold = 70,
-  maxPull = 120,
+  threshold = 80,
+  maxPull = 140,
   resistance = 0.5,
   onRefresh,
   enabled = true,
+  contentRef,
+  spinnerRef,
 }: PullToRefreshOptions): PullToRefreshResult {
   const [refreshing, setRefreshing] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
+  const [armed, setArmed] = useState(false);
 
   // Refs hold the live gesture state so the window listeners (bound once) can
   // read current values without being re-created on every render.
   const draggingRef = useRef(false);
   const startYRef = useRef(0);
+  const pullRef = useRef(0); // current damped pull (px)
+  const armedRef = useRef(false);
   const refreshingRef = useRef(false);
-  const pullDistanceRef = useRef(0);
   const enabledRef = useRef(enabled);
   const onRefreshRef = useRef(onRefresh);
 
@@ -64,9 +73,6 @@ export function usePullToRefresh({
   useEffect(() => {
     onRefreshRef.current = onRefresh;
   }, [onRefresh]);
-  useEffect(() => {
-    pullDistanceRef.current = pullDistance;
-  }, [pullDistance]);
 
   // Maps a raw finger delta to the damped visual pull. Early pixels come through
   // at full resistance; as you approach maxPull the curve flattens so the content
@@ -79,13 +85,58 @@ export function usePullToRefresh({
     [maxPull, resistance]
   );
 
+  // Write the current pull straight to the DOM. `animate` enables the snap
+  // transition used on release / resting; during an active drag it's false so
+  // the content sticks to the finger 1:1.
+  const applyVisual = useCallback(
+    (damped: number, animate: boolean) => {
+      pullRef.current = damped;
+      const content = contentRef.current;
+      if (content) {
+        content.style.willChange = "transform";
+        content.style.transition = animate
+          ? "transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)"
+          : "none";
+        content.style.transform =
+          damped > 0 ? `translate3d(0, ${damped}px, 0)` : "";
+        if (damped <= 0 && !animate) content.style.willChange = "";
+      }
+      // Wind the icon one full turn as the pull arms — a tactile "winding up"
+      // cue. Handed off to the CSS spin animation once refreshing starts.
+      const spinner = spinnerRef?.current;
+      if (spinner && !refreshingRef.current) {
+        const p = threshold > 0 ? Math.min(damped / threshold, 1) : 0;
+        spinner.style.transform = `rotate(${p * 360}deg)`;
+      }
+      // Publish pull strength for CSS consumers (indicator fade/scale). Cheap:
+      // runs on the compositor, never triggers a React render.
+      const progress = threshold > 0 ? Math.min(damped / threshold, 1) : 0;
+      document.documentElement.style.setProperty(
+        "--ptr-progress",
+        progress.toFixed(3)
+      );
+    },
+    [contentRef, spinnerRef, threshold]
+  );
+
+  // Reset to the idle state.
+  const reset = useCallback(
+    (animate: boolean) => {
+      draggingRef.current = false;
+      armedRef.current = false;
+      setArmed(false);
+      applyVisual(0, animate);
+    },
+    [applyVisual]
+  );
+
   useEffect(() => {
     if (!enabled) return;
 
     const onTouchStart = (e: TouchEvent) => {
       if (refreshingRef.current) return;
-      // Only begin a pull when the page is pinned to the top — anywhere lower and
-      // the user is scrolling the list, not requesting a refresh.
+      // Only begin a pull when the page is pinned to the top — anywhere lower
+      // and the user is scrolling the list, not requesting a refresh.
       if (window.scrollY > 0) return;
       if (e.touches.length !== 1) return;
       draggingRef.current = true;
@@ -97,36 +148,44 @@ export function usePullToRefresh({
       const dy = e.touches[0].clientY - startYRef.current;
       if (dy <= 0) {
         // Swiping up — just scrolling. Reset any tiny accumulated pull.
-        if (pullDistanceRef.current !== 0) setPullDistance(0);
-        draggingRef.current = false;
+        if (pullRef.current !== 0) reset(false);
         return;
       }
       // Pulling down past the top: prevent the browser's own overscroll so our
       // indicator is the only thing that moves.
       e.preventDefault();
-      setPullDistance(dampen(dy));
+      const damped = dampen(dy);
+      applyVisual(damped, false);
+      const isArmed = damped >= threshold;
+      if (isArmed !== armedRef.current) {
+        armedRef.current = isArmed;
+        setArmed(isArmed); // discrete change only — no per-frame re-renders
+      }
     };
 
     const endDrag = () => {
       if (!draggingRef.current) return;
       draggingRef.current = false;
-      const current = pullDistanceRef.current;
-      if (current >= threshold) {
-        // Threshold crossed → trigger refresh; hold the indicator at a resting
-        // offset while onRefresh runs, then spring back when it resolves.
-        setPullDistance(threshold * 0.55);
+      if (armedRef.current) {
+        // Threshold crossed → hold the indicator at a resting offset while the
+        // refresh runs, then spring back when it resolves.
+        applyVisual(threshold * 0.5, true);
         refreshingRef.current = true;
+        // Hand the spinner over to the CSS spin animation.
+        if (spinnerRef?.current) spinnerRef.current.style.transform = "";
         setRefreshing(true);
         Promise.resolve(onRefreshRef.current())
           .catch(() => undefined)
           .finally(() => {
             refreshingRef.current = false;
             setRefreshing(false);
-            setPullDistance(0);
+            armedRef.current = false;
+            setArmed(false);
+            applyVisual(0, true);
           });
       } else {
         // Released too early — spring back to zero.
-        setPullDistance(0);
+        reset(true);
       }
     };
 
@@ -143,11 +202,7 @@ export function usePullToRefresh({
       window.removeEventListener("touchend", endDrag);
       window.removeEventListener("touchcancel", endDrag);
     };
-  }, [enabled, threshold, dampen]);
+  }, [enabled, threshold, dampen, applyVisual, reset, spinnerRef]);
 
-  return {
-    refreshing,
-    pullDistance,
-    armed: pullDistance >= threshold,
-  };
+  return { refreshing, armed };
 }
