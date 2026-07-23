@@ -3,10 +3,7 @@ name: Build and Release
 on:
   push:
     branches:
-      - release
       - master
-    tags:
-      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -60,11 +57,26 @@ jobs:
           retryAttempts: 3
           args: --target x86_64-pc-windows-msvc
 
+      - name: Create Portable Windows ZIP
+        # The standalone .exe is fully self-contained (Tauri bundles the
+        # WebView loader and all runtime deps into the binary), so it is the
+        # portable build. Zip it up alongside the installers.
+        shell: pwsh
+        run: |
+          $exe = "src-tauri/target/x86_64-pc-windows-msvc/release/Local Share.exe"
+          if (-not (Test-Path $exe)) {
+            throw "Portable .exe not found at: $exe"
+          }
+          Compress-Archive -Path $exe -DestinationPath "Local-Share-portable-x86_64.zip" -Force
+          Write-Host "Created Local-Share-portable-x86_64.zip"
+
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-executable
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*
+            Local-Share-portable-x86_64.zip
           retention-days: 30
 
   build-android:
@@ -173,15 +185,63 @@ jobs:
     name: Create Combined Release
     needs: [build-windows, build-android]
     runs-on: ubuntu-latest
-    # Industry-standard flow: build artifacts on every push, but only cut a
-    # GitHub Release for a v* tag, a push to the dedicated `release` branch, or
-    # a manual run. Ordinary pushes to master build + upload artifacts only.
-    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/release' || github.event_name == 'workflow_dispatch'
+    # Every push to master builds and publishes a fresh, real (non-pre-)
+    # release. Each release gets a unique tag so they pile up as history.
 
     steps:
-      - name: Get current date
-        id: date
-        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch enough history to list the new commits in this push in the
+          # release notes. 0 = full history; cheap on Linux.
+          fetch-depth: 0
+
+      - name: Build release tag and name
+        id: meta
+        shell: bash
+        run: |
+          # Unique, sortable tag per push: vYYYY.MM.DD-<run>. The run number
+          # disambiguates multiple pushes on the same day.
+          STAMP=$(date -u +'%Y.%m.%d')
+          TAG="v${STAMP}-${GITHUB_RUN_NUMBER}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "name=Local Share ${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Will publish release: ${TAG}"
+
+      - name: Generate release notes from new commits
+        id: changelog
+        shell: bash
+        run: |
+          # Default branch HEAD before this push (the parent of the pushed
+          # commit) is the natural start of the range. Fall back to a small
+          # window if it isn't available (e.g. very first run).
+          RANGE="${{ github.event.before }}..${{ github.event.after }}"
+          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ] || \
+             ! git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+            RANGE="HEAD~10..HEAD"
+            echo "No usable 'before' sha; falling back to $RANGE" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo "## What changed"
+            echo ""
+            # Pretty list of the commit messages pushed in this run.
+            git log "${RANGE}" --pretty=format:"- %s" --no-merges 2>/dev/null || echo "- (no commit log available)"
+            echo ""
+            echo ""
+            echo "## Downloads"
+            echo ""
+            echo "**Windows**"
+            echo "- \`*.msi\` / \`*setup.exe\` — installers"
+            echo "- \`Local-Share-portable-x86_64.zip\` — portable, extract and run"
+            echo ""
+            echo "**Android**"
+            echo "- \`*.apk\` — install on your device"
+            echo ""
+            echo "---"
+            echo "Built from commit \`${GITHUB_SHA::7}\` on \`master\`."
+          } > release_notes.md
+          echo "Notes preview:" >> "$GITHUB_STEP_SUMMARY"
+          cat release_notes.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
@@ -195,30 +255,34 @@ jobs:
           name: android-apk
           path: ./artifacts/android
 
+      - name: Rename artifacts to clean names
+        shell: bash
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          # Flatten everything into one folder with clean, consistent names so
+          # the release page shows one tidy asset per platform.
+          mkdir -p ./artifacts/out
+          cp ./artifacts/windows/Local-Share-portable-x86_64.zip \
+             "./artifacts/out/Local-Share-${TAG}-portable-x86_64.zip" 2>/dev/null || true
+          find ./artifacts/windows -name "*.msi" -type f | head -n1 | \
+            xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-x64.msi" 2>/dev/null || true
+          find ./artifacts/windows -name "*setup*.exe" -type f | head -n1 | \
+            xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-x64-setup.exe" 2>/dev/null || true
+          find ./artifacts/android -name "*.apk" -type f | head -n1 | \
+            xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-android-universal.apk" 2>/dev/null || true
+          echo "=== Final release assets ==="
+          ls -la ./artifacts/out
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}-{1}', steps.date.outputs.date, github.run_number) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Local Share {0}', github.ref_name) || format('Build {0} (Run {1})', steps.date.outputs.date, github.run_number) }}
-          files: |
-            ./artifacts/windows/**/*
-            ./artifacts/android/**/*.apk
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          files: ./artifacts/out/*
           draft: false
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          body: |
-            # Local Share ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('{0} Run {1}', steps.date.outputs.date, github.run_number) }}
-
-            Build triggered by ${{ github.event_name }} on ${{ github.ref }}.
-
-            ## Downloads
-
-            ### Windows
-            - Download the `.msi` or `.exe` installer for Windows
-
-            ### Android
-            - Download the `.apk` file and install on your Android device
-
-            ## Changes
-            See the commit history for detailed changes.
+          prerelease: false
+          body_path: release_notes.md
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

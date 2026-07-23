@@ -2,48 +2,32 @@
 
 ## Build and Release Workflow
 
-This workflow automatically builds Windows executables and Android APKs on every push to `master` or `release`, and additionally creates a GitHub Release when you push a version tag (or push to the dedicated `release` branch, or run it manually).
+This workflow automatically builds Windows and Android versions and **publishes a real GitHub Release on every push to `master`**. No tags to create, no pre-releases — every push ships.
 
 ### How It Works
 
-The workflow consists of 3 jobs:
+The workflow has 3 jobs:
 
-1. **build-windows**: Builds the Windows executable (.msi and .exe installers)
+1. **build-windows**: Builds the Windows executable (.msi and .exe installers) plus a portable `.zip` (standalone `Local Share.exe`, no install needed)
 2. **build-android**: Builds the Android APK
-3. **create-release**: Combines both artifacts and creates a GitHub release — only for `v*` tags, the `release` branch, or manual dispatch (not on every master push)
+3. **create-release**: Combines both, publishes a clean GitHub Release with the new commit messages as the notes
 
 ### Triggering the Workflow
 
-The workflow builds on every push to `master` or `release` (artifacts only). A GitHub Release is created only in the cases below.
-
-#### Option 1: Push a Version Tag (Creates a GitHub Release) — recommended for shipping
+Push to `master`. That's it.
 
 ```bash
-# Tag the current commit
-git tag v1.0.0
-
-# Push the tag to GitHub
-git push origin v1.0.0
+git push origin master
 ```
 
 This will:
 
 1. Build both Windows and Android versions
-2. Create a GitHub release with the tag name
-3. Upload all build artifacts to the release
+2. Publish a **real** (non-pre-) release named like `Local Share v2026.07.23-18` (date + run number)
+3. Attach all artifacts with clean names: MSI installer, NSIS `.exe` setup, portable `.zip`, and the universal APK
+4. Fill the release notes with the commit messages from that push
 
-#### Option 2: Push to the `release` Branch (Creates a GitHub Release)
-
-```bash
-git checkout -b release
-git push origin release
-```
-
-Same outcome as a tag — builds both platforms and publishes a release (tagged `build-<date>-<run>`).
-
-#### Option 3: Push to `master` (Artifacts Only)
-
-Pushes to `master` build both platforms and upload them as workflow artifacts (available for 30 days in the Actions tab), but do **not** create a GitHub Release. Use this for ongoing development; cut a `v*` tag when you're ready to ship.
+You can also run it manually from the Actions tab → "Run workflow" (`workflow_dispatch`).
 
 ### Setting Up Android Signing (Important!)
 
@@ -138,16 +122,24 @@ Common issues:
 
 #### Release Not Created
 
-- Releases are only created for `v*` tags, the `release` branch, or manual dispatch — a plain `master` push only builds artifacts
-- Check that the tag name starts with 'v' (e.g., `v1.0.0`)
-- Verify the `GITHUB_TOKEN` has permission to create releases
+- Every push to `master` should create a release. If it didn't, check the Actions log — the `create-release` job depends on both build jobs finishing first.
+- Verify the `GITHUB_TOKEN` has permission to create releases (it does by default with `permissions: contents: write` at the top of the workflow).
+
+#### Cleaning up old `build-*` pre-releases
+
+The workflow used to auto-publish `build-YYYY-MM-DD-N` pre-releases. Those old releases and their tags can be deleted from the Releases page (each release has a Delete button), or in bulk with the GitHub CLI:
+
+```bash
+gh release list --json tagName -q '.[].tagName' | grep '^build-' | xargs -I{} gh release delete {} --cleanup-tag -y
+```
 
 ### File Locations After Build
 
 **Windows:**
 
 - MSI: `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi`
-- EXE: `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe`
+- EXE (NSIS installer): `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe`
+- Portable ZIP: `Local-Share-portable-x86_64.zip` — contains the standalone `Local Share.exe`, no install required (just extract and run)
 
 **Android:**
 
