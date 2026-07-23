@@ -11,6 +11,10 @@ export default defineConfig(async () => ({
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   // prevent vite from obscuring rust errors
   clearScreen: false,
+  // Tauri bundles the frontend locally, so the 500 kB chunk warning isn't meaningful
+  build: {
+    chunkSizeWarningLimit: 1000,
+  },
   // tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,
