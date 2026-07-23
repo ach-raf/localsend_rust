@@ -12,6 +12,12 @@ on:
 permissions:
   contents: write
 
+# Every push to the same ref cancels the in-flight run and starts a fresh one,
+# so rapid commits don't queue up redundant Windows + Android builds.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -167,7 +173,10 @@ jobs:
     name: Create Combined Release
     needs: [build-windows, build-android]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/release' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+    # Industry-standard flow: build artifacts on every push, but only cut a
+    # GitHub Release for a v* tag, a push to the dedicated `release` branch, or
+    # a manual run. Ordinary pushes to master build + upload artifacts only.
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/release' || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Get current date
@@ -187,7 +196,7 @@ jobs:
           path: ./artifacts/android
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}-{1}', steps.date.outputs.date, github.run_number) }}
           name: ${{ startsWith(github.ref, 'refs/tags/') && format('Local Share {0}', github.ref_name) || format('Build {0} (Run {1})', steps.date.outputs.date, github.run_number) }}

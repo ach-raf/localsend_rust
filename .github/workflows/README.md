@@ -2,7 +2,7 @@
 
 ## Build and Release Workflow
 
-This workflow automatically builds Windows executables and Android APKs when you push to the `release` branch or create a version tag.
+This workflow automatically builds Windows executables and Android APKs on every push to `master` or `release`, and additionally creates a GitHub Release when you push a version tag (or push to the dedicated `release` branch, or run it manually).
 
 ### How It Works
 
@@ -10,20 +10,13 @@ The workflow consists of 3 jobs:
 
 1. **build-windows**: Builds the Windows executable (.msi and .exe installers)
 2. **build-android**: Builds the Android APK
-3. **create-release**: Combines both artifacts and creates a GitHub release (only for tags)
+3. **create-release**: Combines both artifacts and creates a GitHub release — only for `v*` tags, the `release` branch, or manual dispatch (not on every master push)
 
 ### Triggering the Workflow
 
-#### Option 1: Push to Release Branch (Artifacts Only)
+The workflow builds on every push to `master` or `release` (artifacts only). A GitHub Release is created only in the cases below.
 
-```bash
-git checkout -b release
-git push origin release
-```
-
-This will build both Windows and Android versions and upload them as workflow artifacts (available for 30 days).
-
-#### Option 2: Create a Version Tag (Creates GitHub Release)
+#### Option 1: Push a Version Tag (Creates a GitHub Release) — recommended for shipping
 
 ```bash
 # Tag the current commit
@@ -36,8 +29,21 @@ git push origin v1.0.0
 This will:
 
 1. Build both Windows and Android versions
-2. Create a draft GitHub release with the tag name
+2. Create a GitHub release with the tag name
 3. Upload all build artifacts to the release
+
+#### Option 2: Push to the `release` Branch (Creates a GitHub Release)
+
+```bash
+git checkout -b release
+git push origin release
+```
+
+Same outcome as a tag — builds both platforms and publishes a release (tagged `build-<date>-<run>`).
+
+#### Option 3: Push to `master` (Artifacts Only)
+
+Pushes to `master` build both platforms and upload them as workflow artifacts (available for 30 days in the Actions tab), but do **not** create a GitHub Release. Use this for ongoing development; cut a `v*` tag when you're ready to ship.
 
 ### Setting Up Android Signing (Important!)
 
@@ -76,17 +82,15 @@ Add these secrets:
 
 After the workflow completes:
 
-#### For Branch Pushes:
+#### For Branch Pushes (master):
 
 - Artifacts are available in the Actions tab → Select workflow run → Artifacts section
 - Download `windows-executable` and `android-apk` artifacts
 
-#### For Tag Pushes:
+#### For Tag / `release` Branch Pushes:
 
-- A draft release is created automatically
-- Go to Releases → Edit the draft
-- Review the files and release notes
-- Publish the release when ready
+- A published (non-draft) release is created automatically
+- The release body and files are available immediately on the Releases page
 
 ### Customization
 
@@ -134,7 +138,7 @@ Common issues:
 
 #### Release Not Created
 
-- Ensure you pushed a tag (not just a branch)
+- Releases are only created for `v*` tags, the `release` branch, or manual dispatch — a plain `master` push only builds artifacts
 - Check that the tag name starts with 'v' (e.g., `v1.0.0`)
 - Verify the `GITHUB_TOKEN` has permission to create releases
 
@@ -154,8 +158,7 @@ Common issues:
 1. **Test locally first**: Build locally before pushing to ensure everything works
 2. **Use semantic versioning**: Follow semver for your tags (e.g., v1.0.0, v1.1.0)
 3. **Keep secrets secure**: Never commit keystores or passwords to the repository
-4. **Review draft releases**: Always review the draft release before publishing
-5. **Update release notes**: Edit the release body with meaningful changelogs
+4. **Update release notes**: Edit the release body with meaningful changelogs after publishing
 
 ### Additional Resources
 
