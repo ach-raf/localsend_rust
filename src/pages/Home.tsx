@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Container,
   Grid,
@@ -29,9 +29,10 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
-import { AndroidFs, isAndroid } from "tauri-plugin-android-fs-api";
+import { showOpenFilePicker, isAndroid } from "tauri-plugin-android-fs-api";
 import TextMessageModal from "../components/TextMessageModal";
 import FileTransferConfirmModal from "../components/FileTransferConfirmModal";
+import { usePullToRefresh } from "../hooks/usePullToRefresh";
 
 interface Peer {
   ip: string;
@@ -432,7 +433,7 @@ export default function Home() {
       // Use Android FS API on Android, dialog plugin on other platforms
       if (isAndroid()) {
         try {
-          const uris = await AndroidFs.showOpenFilePicker({
+          const uris = await showOpenFilePicker({
             multiple: true,
             mimeTypes: ["*/*"],
           });
@@ -621,10 +622,19 @@ export default function Home() {
     }
   };
 
+  // Core refresh — no UI side effects. Shared by the header button and the
+  // pull-to-refresh gesture so they can't drift apart.
+  const refreshPeers = useCallback(async () => {
+    await invoke("refresh_peers");
+    // Keep the button spinner alive briefly so it's obvious something happened
+    // even when discovery resolves instantly.
+    await new Promise((r) => setTimeout(r, 800));
+  }, []);
+
   const handleRefreshPeers = async () => {
     setRefreshing(true);
     try {
-      await invoke("refresh_peers");
+      await refreshPeers();
       notifications.show({
         title: "Discovery Refreshed",
         message: "Searching for nearby peers...",
@@ -638,10 +648,27 @@ export default function Home() {
         color: "red",
       });
     } finally {
-      // Keep spinning for a bit longer to show it's searching
       setTimeout(() => setRefreshing(false), 2000);
     }
   };
+
+  // Pull-to-refresh — Android only. isAndroid() throws on desktop because the
+  // injected global is absent, so resolve it once up front and default to false.
+  const ptrEnabled = useMemo(() => {
+    try {
+      return isAndroid();
+    } catch {
+      return false;
+    }
+  }, []);
+  const {
+    refreshing: ptrRefreshing,
+    pullDistance,
+    armed: ptrArmed,
+  } = usePullToRefresh({
+    enabled: ptrEnabled,
+    onRefresh: refreshPeers,
+  });
 
   const handleAcceptTransfer = async () => {
     if (!fileTransferRequest && !batchTransferRequest) return;
@@ -698,11 +725,52 @@ export default function Home() {
 
   return (
     <>
+      {/* Pull-to-refresh indicator (Android only). Sits above the content and is
+          revealed as the content is dragged down. Fixed under the 64px mobile
+          header; never rendered on desktop. */}
+      {ptrEnabled && (pullDistance > 0 || ptrRefreshing) && (
+        <div
+          className="ptr-indicator"
+          aria-hidden="true"
+          style={{ top: `calc(64px + env(safe-area-inset-top, 0px))` }}
+        >
+          <ThemeIcon
+            size={36}
+            variant="light"
+            color="phosphor"
+            radius="xl"
+            className={ptrRefreshing ? "ptr-spinner" : ""}
+            style={{
+              transform: ptrRefreshing
+                ? undefined
+                : `rotate(${Math.min(pullDistance, 180)}deg)`,
+            }}
+          >
+            <IconRefresh size={20} />
+          </ThemeIcon>
+          <Text size="xs" c="dimmed" mt={6}>
+            {ptrRefreshing
+              ? "Searching…"
+              : ptrArmed
+                ? "Release to refresh"
+                : "Pull to refresh"}
+          </Text>
+        </div>
+      )}
+
       <Container
         size="100%"
         px={{ base: "xs", sm: "md", lg: "xl" }}
         pt={{ base: "md", sm: 0 }}
         className="animate-[fadeIn_250ms_ease-out]"
+        style={
+          ptrEnabled && (pullDistance > 0 || ptrRefreshing)
+            ? {
+                transform: `translateY(${pullDistance}px)`,
+                transition: pullDistance === 0 ? "transform 0.2s ease-out" : "none",
+              }
+            : undefined
+        }
       >
         <Grid gutter={{ base: "xs", sm: "md", lg: "lg" }}>
           {/* Mobile: Single column that switches content. Desktop: Side-by-side */}
