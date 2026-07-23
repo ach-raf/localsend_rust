@@ -112,6 +112,22 @@ function Layout() {
                 Local<em>Share</em>
               </span>
             </div>
+            {/* Narrow screens: squeeze the device name next to the wordmark
+                (shown exactly when the right-side label hides — complementary
+                sm breakpoint). Hairline separator + mono voice, truncates so a
+                long alias never overflows the header. */}
+            <div
+              className="flex sm:hidden items-center gap-2 min-w-0"
+              title={`This device · ${deviceName}`}
+            >
+              <span
+                aria-hidden="true"
+                className="h-[18px] w-px bg-border-subtle flex-none"
+              />
+              <span className="t-mono text-[0.8rem] text-text-secondary truncate max-w-[40vw]">
+                {deviceName}
+              </span>
+            </div>
           </Group>
           <div className="t-mono text-[0.72rem] text-text-tertiary hidden sm:block">
             this device <span className="text-text-secondary">{deviceName}</span>
