@@ -13,7 +13,7 @@ dist-ssr
 *.local
 
 # Editor directories and files
-.vscode/*
+.vscode/
 !.vscode/extensions.json
 .idea
 .DS_Store
@@ -30,3 +30,8 @@ dist-ssr
 CLAUDE.md
 prototype/
 .zcode/
+.agents/
+.superpowers
+docs/
+AGENTS.md
+design.md

@@ -6,6 +6,12 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::{
+    atomic::AtomicBool,
+    Arc,
+};
+#[cfg(target_os = "android")]
+use std::sync::atomic::Ordering;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -24,6 +30,8 @@ struct ServerState {
     app_handle: AppHandle,
     download_dir: PathBuf,
     pending_transfers: PendingTransfers,
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    app_foreground: Arc<AtomicBool>,
 }
 
 #[derive(Serialize, Clone, Deserialize)]
@@ -59,7 +67,12 @@ struct MessagePayload {
     content: String,
 }
 
-pub async fn start_server(app: AppHandle, port: u16, pending_transfers: PendingTransfers) {
+pub async fn start_server(
+    app: AppHandle,
+    port: u16,
+    pending_transfers: PendingTransfers,
+    app_foreground: Arc<AtomicBool>,
+) {
     // Get the proper Downloads directory for the platform
     let download_dir = if cfg!(target_os = "android") {
         // On Android, use the public Downloads directory
@@ -95,6 +108,7 @@ pub async fn start_server(app: AppHandle, port: u16, pending_transfers: PendingT
         app_handle: app.clone(),
         download_dir,
         pending_transfers,
+        app_foreground,
     };
 
     let app_router = Router::new()
@@ -338,6 +352,11 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
 
         // Now write the file using the appropriate method for the platform
         #[cfg(target_os = "android")]
+        let mut received_file_uri: Option<String> = None;
+        #[cfg(not(target_os = "android"))]
+        let received_file_uri: Option<String> = None;
+
+        #[cfg(target_os = "android")]
         {
             // On Android, use the Android FS plugin to write to Downloads via MediaStore
             eprintln!("Using Android MediaStore to save file: {}", sanitized_name);
@@ -386,8 +405,12 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
                 )
                 .await
             {
-                Ok(_) => {
+                Ok(uri) => {
                     eprintln!("File saved successfully via MediaStore: {}", sanitized_name);
+                    if let Ok(actual_name) = api.get_name(&uri).await {
+                        sanitized_name = actual_name;
+                    }
+                    received_file_uri = Some(uri.uri);
                 }
                 Err(e) => {
                     eprintln!("Failed to save file via MediaStore: {}", e);
@@ -462,6 +485,56 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
         if let Some(path) = file_path {
             complete_payload["file_path"] = json!(path);
         }
+        if let Some(uri) = received_file_uri.as_ref() {
+            complete_payload["file_uri"] = json!(uri);
+        }
+
+        #[cfg(target_os = "android")]
+        let mut native_notification_shown = false;
+        #[cfg(not(target_os = "android"))]
+        let native_notification_shown = false;
+        #[cfg(target_os = "android")]
+        if !state.app_foreground.load(Ordering::Relaxed) {
+            use tauri_plugin_notification::{NotificationExt, PermissionState};
+
+            match state.app_handle.notification().permission_state() {
+                Ok(PermissionState::Granted) => {
+                    let notification_id = Uuid::parse_str(&transfer_id)
+                        .map(|id| i32::from_le_bytes(id.as_bytes()[..4].try_into().unwrap()))
+                        .unwrap_or_else(|_| transfer_id.bytes().fold(0i32, |acc, byte| {
+                            acc.wrapping_mul(31).wrapping_add(byte as i32)
+                        }));
+
+                    if let Some(uri) = received_file_uri.as_ref() {
+                        match state
+                            .app_handle
+                            .notification()
+                            .builder()
+                            .id(notification_id)
+                            .channel_id("received-files")
+                            .title("File received")
+                            .body(format!("Tap to open {}", sanitized_name))
+                            .extra("kind", "received-file")
+                            .extra("fileUri", uri)
+                            .auto_cancel()
+                            .show()
+                        {
+                            Ok(()) => native_notification_shown = true,
+                            Err(error) => {
+                                eprintln!("Failed to show received-file notification: {error}")
+                            }
+                        }
+                    }
+                }
+                Ok(state) => {
+                    eprintln!("Notification permission not granted ({state}); using in-app toast")
+                }
+                Err(error) => {
+                    eprintln!("Failed to check notification permission: {error}")
+                }
+            }
+        }
+        complete_payload["show_in_app"] = json!(!native_notification_shown);
 
         eprintln!("Emitting file-receive-complete: {:?}", complete_payload);
         if let Err(e) = state
@@ -477,6 +550,7 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
 }
 
 /// Generate a unique filename by adding a UUID if the file already exists
+#[cfg(not(target_os = "android"))]
 async fn get_unique_filename(download_dir: &Path, filename: &str) -> String {
     let path = download_dir.join(filename);
 

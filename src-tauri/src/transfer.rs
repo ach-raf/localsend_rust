@@ -50,6 +50,7 @@ pub async fn send_file(
     peer_port: u16,
     file_path: String,
     session_id: Option<String>,
+    progress_id: Option<String>,
 ) -> Result<(), String> {
     eprintln!(
         "send_file called with: {} -> {}:{} (session: {:?})",
@@ -163,7 +164,7 @@ pub async fn send_file(
     let last_emit = Arc::new(Mutex::new(Instant::now()));
     let uploaded_clone = uploaded.clone();
     let app_handle = app.clone();
-    let transfer_id = file_name.clone(); // Use filename as ID for sender tracking
+    let transfer_id = progress_id.unwrap_or_else(|| file_name.clone());
 
     let progress_stream = stream.map(move |chunk| {
         if let Ok(ref bytes) = chunk {
@@ -219,15 +220,6 @@ pub async fn send_file(
 
     eprintln!("Response status: {}", res.status());
     if res.status().is_success() {
-        // Emit 100% progress
-        let _ = app.emit(
-            "transfer-progress",
-            ProgressPayload {
-                transfer_id: file_name,
-                current_bytes: file_size,
-                total_bytes: file_size,
-            },
-        );
         Ok(())
     } else {
         Err(format!("Upload failed with status: {}", res.status()))

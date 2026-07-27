@@ -19,3 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# The notification plugin uses Jackson/reflection for its Android command models.
+-keep class app.tauri.notification.** { *; }

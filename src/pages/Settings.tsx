@@ -7,7 +7,7 @@ import {
   Button,
   Text,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
+import { notifications } from "../lib/notifications";
 import { invoke } from "@tauri-apps/api/core";
 import { IconDice } from "@tabler/icons-react";
 

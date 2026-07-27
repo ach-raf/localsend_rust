@@ -12,7 +12,10 @@ use crate::server::start_server;
 use crate::transfer::{send_file, send_file_bytes, send_text};
 use mdns_sd::ServiceDaemon;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
 
@@ -27,6 +30,7 @@ struct AppState {
     #[allow(dead_code)] // Kept alive to maintain mDNS registration
     service_daemon: Mutex<Option<ServiceDaemon>>,
     pending_transfers: PendingTransfers,
+    app_foreground: Arc<AtomicBool>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -105,8 +109,17 @@ async fn send_file_to_peer(
     peer_port: u16,
     file_path: String,
     session_id: Option<String>,
+    progress_id: Option<String>,
 ) -> Result<(), String> {
-    send_file(app, peer_ip, peer_port, file_path, session_id).await
+    send_file(
+        app,
+        peer_ip,
+        peer_port,
+        file_path,
+        session_id,
+        progress_id,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -276,9 +289,11 @@ async fn get_file_metadata(app: AppHandle, file_path: String) -> Result<FileMeta
             return Err("Content URIs are only supported on Android".to_string());
         }
     } else {
-        std::fs::metadata(&file_path)
-            .map_err(|e| e.to_string())?
-            .len()
+        let metadata = std::fs::metadata(&file_path).map_err(|e| e.to_string())?;
+        if !metadata.is_file() {
+            return Err(format!("Only files can be sent: {}", file_path));
+        }
+        metadata.len()
     };
 
     Ok(FileMetadata { name, size })
@@ -399,6 +414,7 @@ pub fn run() {
         .plugin(tauri_plugin_upload::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let config = load_config(app.handle());
             let port = config.port;
@@ -423,12 +439,30 @@ pub fn run() {
                 transfers: Arc::new(Mutex::new(HashMap::new())),
                 authorized_sessions: Arc::new(Mutex::new(HashMap::new())),
             };
+            let app_foreground = Arc::new(AtomicBool::new(true));
 
             app.manage(AppState {
                 config: Mutex::new(config),
                 service_daemon: Mutex::new(daemon),
                 pending_transfers: pending_transfers.clone(),
+                app_foreground: app_foreground.clone(),
             });
+
+            #[cfg(target_os = "android")]
+            {
+                use tauri_plugin_notification::{
+                    Channel, Importance, NotificationExt, Visibility,
+                };
+
+                let channel = Channel::builder("received-files", "Received files")
+                    .description("Notifications shown when a file finishes downloading")
+                    .importance(Importance::Default)
+                    .visibility(Visibility::Private)
+                    .build();
+                if let Err(error) = app.notification().create_channel(channel) {
+                    eprintln!("Failed to create received-file notification channel: {error}");
+                }
+            }
 
             // Start Discovery
             eprintln!("Starting discovery service...");
@@ -438,7 +472,7 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 eprintln!("Starting HTTP server...");
-                start_server(handle, port, pending_transfers).await;
+                start_server(handle, port, pending_transfers, app_foreground).await;
             });
 
             Ok(())
@@ -462,6 +496,16 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            if let tauri::RunEvent::WindowEvent {
+                event: tauri::WindowEvent::Focused(focused),
+                ..
+            } = &event
+            {
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    state.app_foreground.store(*focused, Ordering::Relaxed);
+                }
+            }
+
             // On graceful exit, announce ourselves gone so every other client
             // drops us immediately via an mDNS goodbye (TTL=0) instead of
             // waiting for the staleness sweep. Without this, closing the app

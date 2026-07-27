@@ -2,10 +2,11 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { MantineProvider, createTheme } from "@mantine/core";
-import { Notifications } from "@mantine/notifications";
+import { Toaster } from "sonner";
+import AndroidNotificationBridge from "./components/AndroidNotificationBridge";
 import "@mantine/core/styles.css";
 import "@mantine/dropzone/styles.css";
-import "@mantine/notifications/styles.css";
+import "sonner/dist/styles.css";
 import "./App.css";
 
 const theme = createTheme({
@@ -65,7 +66,18 @@ const theme = createTheme({
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="dark">
-      <Notifications position="top-right" zIndex={1000} autoClose={5000} />
+      <Toaster
+        theme="dark"
+        position="top-right"
+        duration={5000}
+        gap={8}
+        offset={12}
+        mobileOffset={12}
+        closeButton
+        swipeDirections={["left", "right"]}
+        toastOptions={{ className: "depth-toast" }}
+      />
+      <AndroidNotificationBridge />
       <App />
     </MantineProvider>
   </React.StrictMode>

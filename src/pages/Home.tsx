@@ -14,7 +14,7 @@ import {
   ActionIcon,
   Tooltip,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
+import { notifications } from "../lib/notifications";
 import {
   IconUpload,
   IconFile,
@@ -27,12 +27,19 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { showOpenFilePicker, isAndroid } from "tauri-plugin-android-fs-api";
 import TextMessageModal from "../components/TextMessageModal";
 import FileTransferConfirmModal from "../components/FileTransferConfirmModal";
 import { usePullToRefresh } from "../hooks/usePullToRefresh";
+import { sendFilePathsToPeer } from "../lib/fileTransfer";
+import {
+  hasOpenableFile,
+  openReceivedFile,
+  type ReceivedFileRef,
+} from "../lib/receivedFiles";
 
 interface Peer {
   ip: string;
@@ -80,13 +87,22 @@ export default function Home() {
   const [batchTransferRequest, setBatchTransferRequest] =
     useState<BatchTransferRequest | null>(null);
   const [transferModalOpened, setTransferModalOpened] = useState(false);
+  const [dragTargetPeerKey, setDragTargetPeerKey] = useState<string | null>(
+    null,
+  );
 
   // Use ref to access current selectedPeer in event handlers without re-subscribing
   const selectedPeerRef = useRef<Peer | null>(null);
+  const peersRef = useRef<Peer[]>([]);
+  const sendingRef = useRef(false);
 
   useEffect(() => {
     selectedPeerRef.current = selectedPeer;
   }, [selectedPeer]);
+
+  useEffect(() => {
+    peersRef.current = peers;
+  }, [peers]);
 
   useEffect(() => {
     // Trigger initial discovery on mount
@@ -146,50 +162,42 @@ export default function Home() {
     const unlistenFileComplete = listen(
       "file-receive-complete",
       (event: any) => {
-        const { transfer_id, file_name, file_path } = event.payload;
+        const {
+          transfer_id,
+          file_name,
+          file_path,
+          file_uri,
+          show_in_app = true,
+        } = event.payload;
+        const fileRef: ReceivedFileRef = { file_path, file_uri };
 
-        // Check if we're on Windows and have a file path
-        const isWindows = navigator.platform.toLowerCase().includes("win");
-        const hasFilePath = file_path && typeof file_path === "string";
-
-        // Create message with button if on Windows and file path is available
-        const messageContent =
-          isWindows && hasFilePath ? (
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-            >
-              <div>Successfully received {file_name}</div>
-              <Button
-                size="xs"
-                variant="light"
-                onClick={async () => {
-                  try {
-                    await invoke("open_file_location", { filePath: file_path });
-                  } catch (error) {
-                    console.error("Failed to open file location:", error);
-                    notifications.show({
-                      title: "Error",
-                      message: "Failed to open file location",
-                      color: "red",
-                    });
-                  }
-                }}
-                style={{ alignSelf: "flex-start", marginTop: "4px" }}
-              >
-                Open File Location
-              </Button>
-            </div>
-          ) : (
-            `Successfully received ${file_name}`
-          );
+        if (!show_in_app) {
+          notifications.hide(transfer_id);
+          return;
+        }
 
         notifications.update({
           id: transfer_id,
           title: "File Received",
-          message: messageContent,
+          message: `Successfully received ${file_name}`,
           color: "phosphor",
           loading: false,
-          autoClose: 10000, // Close after 10 seconds, even if button is available
+          autoClose: 10000,
+          action: hasOpenableFile(fileRef)
+            ? {
+                label: file_uri ? "Open File" : "Open File Location",
+                onClick: () => {
+                  void openReceivedFile(fileRef).catch((error) => {
+                    console.error("Failed to open received file:", error);
+                    notifications.show({
+                      title: "Unable to open file",
+                      message: String(error),
+                      color: "red",
+                    });
+                  });
+                },
+              }
+            : undefined,
         });
       }
     );
@@ -281,124 +289,71 @@ export default function Home() {
       }
     );
 
-    // Listen for Tauri's native file drop events using the proper API
     const unlistenFileDrop = getCurrentWebview().onDragDropEvent(
       async (event) => {
-        // Only handle 'drop' events, ignore 'over' and 'cancel'
-        if (event.payload.type !== "drop") {
+        if (event.payload.type === "leave") {
+          setDragTargetPeerKey(null);
           return;
         }
 
-        console.log("Drag-drop event received:", event.payload.paths);
-        const currentPeer = selectedPeerRef.current;
-        if (!currentPeer) {
+        const scaleFactor = await getCurrentWindow().scaleFactor();
+        const x = event.payload.position.x / scaleFactor;
+        const y = event.payload.position.y / scaleFactor;
+        const element = document.elementFromPoint(x, y);
+        const peerElement = element?.closest<HTMLElement>(
+          "[data-peer-drop-key]",
+        );
+        const targetKey = peerElement?.dataset.peerDropKey ?? null;
+
+        if (event.payload.type === "enter" || event.payload.type === "over") {
+          setDragTargetPeerKey(targetKey);
+          return;
+        }
+
+        setDragTargetPeerKey(null);
+        if (sendingRef.current) {
           notifications.show({
-            title: "No Peer Selected",
-            message: "Please select a peer before dropping files.",
+            title: "Transfer in progress",
+            message: "Wait for the current batch to finish before dropping more files.",
             color: "yellow",
           });
           return;
         }
 
-        const filePaths = event.payload.paths;
-        setSending(true);
+        const targetPeer = targetKey
+          ? peersRef.current.find(
+              (peer) => `${peer.ip}:${peer.port}` === targetKey,
+            )
+          : element?.closest("[data-selected-peer-drop-zone]")
+            ? selectedPeerRef.current
+            : null;
 
-        try {
-          // 1. Get metadata for all files
-          const filesMetadata = await Promise.all(
-            filePaths.map(async (path) => {
-              // On Windows, Tauri might provide file:/// URLs, normalize them
-              let normalizedPath = path;
-              if (normalizedPath.startsWith("file:///")) {
-                normalizedPath = normalizedPath.replace("file:///", "");
-                normalizedPath = decodeURIComponent(normalizedPath);
-              }
-              return await invoke<{ name: string; size: number }>(
-                "get_file_metadata",
-                { filePath: normalizedPath }
-              );
-            })
-          );
-
-          // 2. Request transfer for the whole batch
-          const [accepted, sessionId] = await invoke<[boolean, string]>(
-            "request_batch_transfer_to_peer",
-            {
-              peerIp: currentPeer.ip,
-              peerPort: currentPeer.port,
-              files: filesMetadata.map((f) => [f.name, f.size]),
-            }
-          );
-
-          if (!accepted) {
-            setSending(false);
-            notifications.show({
-              title: "Transfer Rejected",
-              message: `The peer rejected the transfer of ${filesMetadata.length} files.`,
-              color: "yellow",
-            });
-            return;
-          }
-
-          // 3. Send each file with the session ID
-          for (let i = 0; i < filePaths.length; i++) {
-            let filePath = filePaths[i];
-            const fileName = filesMetadata[i].name;
-
-            try {
-              if (filePath.startsWith("file:///")) {
-                filePath = filePath.replace("file:///", "");
-                filePath = decodeURIComponent(filePath);
-              }
-
-              const notificationId = `${sessionId}-${i}`;
-
-              notifications.show({
-                id: notificationId,
-                title: `Sending ${fileName}`,
-                message: "Starting...",
-                loading: true,
-                autoClose: false,
-              });
-
-              await invoke("send_file_to_peer", {
-                peerIp: currentPeer.ip,
-                peerPort: currentPeer.port,
-                filePath: filePath,
-                sessionId: sessionId,
-              });
-
-              notifications.update({
-                id: notificationId,
-                title: "Sent",
-                message: `Successfully sent ${fileName}`,
-                color: "phosphor",
-                loading: false,
-                autoClose: 2000,
-              });
-            } catch (e) {
-              const errorMsg =
-                typeof e === "string" ? e : e?.toString() || String(e);
-              console.error(`Failed to send ${fileName}:`, e);
-              notifications.show({
-                title: "Error",
-                message: `Failed to send ${fileName}: ${errorMsg}`,
-                color: "red",
-              });
-            }
-          }
-        } catch (e) {
-          console.error("Unexpected error in drag-drop handler:", e);
+        if (!targetPeer) {
           notifications.show({
-            title: "Error",
-            message: `Unexpected error: ${e}`,
+            title: "Drop files on a device",
+            message: "Choose a peer card or the selected peer's file panel.",
+            color: "yellow",
+          });
+          return;
+        }
+
+        setSelectedPeer(targetPeer);
+        sendingRef.current = true;
+        setSending(true);
+        try {
+          await sendFilePathsToPeer(targetPeer, event.payload.paths);
+        } catch (error) {
+          console.error("Failed to send dropped files:", error);
+          notifications.show({
+            title: "Unable to send files",
+            message: String(error),
             color: "red",
           });
         } finally {
-          console.log("Drag-drop operation complete, resetting sending state");
+          sendingRef.current = false;
           setSending(false);
         }
-      }
+      },
     );
 
     return () => {
@@ -505,86 +460,10 @@ export default function Home() {
         filePaths = Array.isArray(selected) ? selected : [selected];
       }
 
+      if (sendingRef.current) return;
+      sendingRef.current = true;
       setSending(true);
-
-      // 1. Get metadata for all files
-      const filesMetadata = await Promise.all(
-        filePaths.map(async (path) => {
-          return await invoke<{ name: string; size: number }>(
-            "get_file_metadata",
-            { filePath: path }
-          );
-        })
-      );
-
-      // 2. Request transfer for the whole batch
-      console.log("Requesting batch transfer for files:", filesMetadata);
-      const [accepted, sessionId] = await invoke<[boolean, string]>(
-        "request_batch_transfer_to_peer",
-        {
-          peerIp: selectedPeer.ip,
-          peerPort: selectedPeer.port,
-          files: filesMetadata.map((f) => [f.name, f.size]),
-        }
-      );
-      console.log("Batch transfer request response:", { accepted, sessionId });
-
-      if (!accepted) {
-        setSending(false);
-        notifications.show({
-          title: "Transfer Rejected",
-          message: `The peer rejected the transfer of ${filesMetadata.length} files.`,
-          color: "yellow",
-        });
-        return;
-      }
-
-      // 3. Send each file with the session ID
-      for (let i = 0; i < filePaths.length; i++) {
-        const filePath = filePaths[i];
-        const fileName = filesMetadata[i].name;
-
-        try {
-          // Use a safe identifier for notifications
-          const notificationId = `${sessionId}-${i}`;
-
-          notifications.show({
-            id: notificationId,
-            title: `Sending ${fileName}`,
-            message: "Starting...",
-            loading: true,
-            autoClose: false,
-          });
-
-          // Pass session_id to backend
-          await invoke("send_file_to_peer", {
-            peerIp: selectedPeer.ip,
-            peerPort: selectedPeer.port,
-            filePath: filePath,
-            sessionId: sessionId,
-          });
-
-          notifications.update({
-            id: notificationId,
-            title: "Sent",
-            message: `Successfully sent ${fileName}`,
-            color: "phosphor",
-            loading: false,
-            autoClose: 2000,
-          });
-        } catch (e) {
-          const errorMsg =
-            typeof e === "string" ? e : e?.toString() || String(e);
-
-          notifications.show({
-            title: "Error",
-            message: `Failed to send ${fileName}: ${errorMsg}`,
-            color: "red",
-            autoClose: 5000,
-          });
-          console.error(`Failed to send ${fileName}:`, e);
-        }
-      }
+      await sendFilePathsToPeer(selectedPeer, filePaths);
     } catch (e) {
       notifications.show({
         title: "Error",
@@ -592,6 +471,7 @@ export default function Home() {
         color: "red",
       });
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
@@ -817,8 +697,13 @@ export default function Home() {
                   {peers.map((peer) => (
                     <div
                       key={peer.ip + peer.port}
+                      data-peer-drop-key={`${peer.ip}:${peer.port}`}
                       className={`peer-card p-4 ${
                         selectedPeer?.ip === peer.ip ? "selected" : ""
+                      } ${
+                        dragTargetPeerKey === `${peer.ip}:${peer.port}`
+                          ? "peer-drop-target"
+                          : ""
                       }`}
                       onClick={() => setSelectedPeer(peer)}
                     >
@@ -869,6 +754,17 @@ export default function Home() {
                           >
                             {peer.ip}
                           </Text>
+                          {dragTargetPeerKey === `${peer.ip}:${peer.port}` && (
+                            <Text
+                              size="xs"
+                              fw={700}
+                              c="phosphor.4"
+                              mt={6}
+                              tt="uppercase"
+                            >
+                              Drop to send
+                            </Text>
+                          )}
                         </div>
                       </Group>
                     </div>
@@ -950,6 +846,7 @@ export default function Home() {
                     style={{ overflow: "hidden" }}
                   >
                     <div
+                      data-selected-peer-drop-zone
                       className="upload-area flex flex-col items-center justify-center gap-4 py-[clamp(1rem,3vw,2rem)] px-[clamp(0.5rem,2vw,1rem)] cursor-pointer h-full"
                       onClick={handleSelectFiles}
                     >

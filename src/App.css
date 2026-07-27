@@ -102,6 +102,83 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* Sonner notifications — compact floating controls, one level above app cards. */
+[data-sonner-toaster] [data-sonner-toast].depth-toast {
+  color: var(--text-primary);
+  background-color: var(--bg-light);
+  background-image: none;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-m);
+  font-family: var(--font-body);
+  gap: 10px;
+  min-height: 56px;
+  padding: 11px 40px 11px 12px;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast[data-type="success"] {
+  border-left-color: var(--accent-success);
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast[data-type="warning"] {
+  border-left-color: var(--accent-warning);
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast[data-type="error"] {
+  border-left-color: var(--accent-danger);
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-content] {
+  gap: 2px;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-title] {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1.25;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-description] {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-icon] {
+  color: var(--accent-primary);
+  width: 18px;
+  height: 18px;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-close-button] {
+  left: auto;
+  right: 8px;
+  top: 8px;
+  transform: none;
+  color: var(--text-secondary);
+  background: var(--bg);
+  border-color: var(--border-subtle);
+  box-shadow: var(--shadow-s);
+  opacity: 0.75;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-close-button]:hover {
+  color: var(--text-primary);
+  background: var(--bg-lighter);
+  opacity: 1;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-button] {
+  color: var(--on-accent);
+  background: var(--accent-primary);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-s);
+  font-weight: 700;
+}
+
 /* ============================================
    ANIMATIONS
    ============================================ */
@@ -366,6 +443,13 @@ body {
   width: 3px;
   border-radius: 3px;
   background: var(--accent-primary);
+}
+.peer-card.peer-drop-target {
+  background-color: var(--bg-lighter);
+  border-color: var(--accent-primary);
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: var(--shadow-l),
+    0 0 0 4px color-mix(in oklch, var(--accent-primary) 18%, transparent);
 }
 
 /* ============================================

@@ -1,7 +1,7 @@
 import { Modal, Textarea, Button, CopyButton } from "@mantine/core";
 import { IconCopy, IconCheck, IconExternalLink, IconX } from "@tabler/icons-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { notifications } from "@mantine/notifications";
+import { notifications } from "../lib/notifications";
 
 interface TextMessageModalProps {
   opened: boolean;
