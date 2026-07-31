@@ -125,6 +125,21 @@ export default function Home() {
         return acc;
       }, [] as Peer[]);
       setPeers(uniquePeers);
+
+      // If the selected peer dropped off the network and we're not mid-send,
+      // close the send panel so the user isn't left staring at a dead peer.
+      // Incoming receives are independent of this panel, so we only guard on
+      // outgoing activity (sending) here.
+      const sel = selectedPeerRef.current;
+      if (
+        sel &&
+        !sendingRef.current &&
+        !uniquePeers.some(
+          (p) => p.ip === sel.ip && p.port === sel.port,
+        )
+      ) {
+        setSelectedPeer(null);
+      }
     });
 
     const unlistenFileStart = listen("file-receive-start", (event: any) => {
