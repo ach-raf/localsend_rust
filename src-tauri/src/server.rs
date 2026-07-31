@@ -13,7 +13,9 @@ use std::sync::{
 #[cfg(target_os = "android")]
 use std::sync::atomic::Ordering;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(not(target_os = "android"))]
+use std::path::Path;
 use std::time::Instant;
 use tauri::Emitter;
 use tauri::{AppHandle, Manager}; // Import Manager for path()
@@ -89,10 +91,17 @@ pub async fn start_server(
             }
         })
     } else {
-        // On other platforms (Linux, macOS), use the system download directory
-        app.path()
-            .download_dir()
-            .unwrap_or_else(|_| PathBuf::from("downloads"))
+        // On other platforms (Linux, macOS), use the system download directory.
+        // download_dir() resolves via XDG → ~/Downloads on Linux and the home
+        // Downloads folder on macOS; fall back to $HOME/Downloads (or a literal
+        // "downloads" in CWD as last resort) if the path manager can't resolve.
+        app.path().download_dir().unwrap_or_else(|_| {
+            if let Ok(home) = std::env::var("HOME") {
+                PathBuf::from(home).join("Downloads")
+            } else {
+                PathBuf::from("downloads")
+            }
+        })
     };
 
     // Ensure download directory exists
@@ -352,7 +361,7 @@ async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipa
 
         // Now write the file using the appropriate method for the platform
         #[cfg(target_os = "android")]
-        let mut received_file_uri: Option<String> = None;
+        let received_file_uri: Option<String>;
         #[cfg(not(target_os = "android"))]
         let received_file_uri: Option<String> = None;
 

@@ -353,41 +353,36 @@ async fn get_file_name(app: AppHandle, file_path: String) -> Result<String, Stri
 
 #[tauri::command]
 fn open_file_location(file_path: String) -> Result<(), String> {
+    // Resolve the directory we want to surface: the file's parent if the path
+    // is (or points at) a file, the path itself if it's already a directory.
+    // Shared across the platform branches so they only differ in *how* they
+    // open that directory.
+    let path = std::path::Path::new(&file_path);
+    let dir_path = if path.is_dir() {
+        path
+    } else {
+        // Treat it as a file path; fall back to the input if there's no parent
+        // (e.g. a bare filename in CWD) so we still attempt to open something.
+        path.parent().unwrap_or(path)
+    };
+    let dir_str = dir_path
+        .to_str()
+        .ok_or_else(|| "Invalid path encoding".to_string())?;
+
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
 
-        let path = std::path::Path::new(&file_path);
-
-        // Check if path exists and is a file
-        let is_file = path.exists() && path.is_file();
-
-        if is_file {
-            // Open folder and select the file
-            // Use /select, to open Explorer and highlight the file
+        // /select, opens Explorer and highlights the file when it exists.
+        if path.exists() && path.is_file() {
             let file_path_str = path
                 .to_str()
                 .ok_or_else(|| "Invalid path encoding".to_string())?;
-
             Command::new("explorer.exe")
                 .args(["/select,", file_path_str])
                 .spawn()
                 .map_err(|e| format!("Failed to open file location: {}", e))?;
         } else {
-            // If it's not a file or doesn't exist, try to open the directory
-            let dir_path = if path.is_dir() {
-                path
-            } else {
-                // Assume it's a file path and get parent directory
-                path.parent()
-                    .ok_or_else(|| "Failed to get parent directory".to_string())?
-            };
-
-            let dir_str = dir_path
-                .to_str()
-                .ok_or_else(|| "Invalid path encoding".to_string())?;
-
-            // Just open the folder
             Command::new("explorer.exe")
                 .arg(dir_str)
                 .spawn()
@@ -397,10 +392,24 @@ fn open_file_location(file_path: String) -> Result<(), String> {
         Ok(())
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
-        let _ = file_path;
-        Err("open_file_location is only supported on Windows".to_string())
+        use std::process::Command;
+
+        // No DE-agnostic "select this file" flag exists across GNOME/KDE/XFCE
+        // (nautilus --select, Dolphin, Thunar, Nemo all differ), so the robust
+        // cross-DE behavior is to open the containing folder via xdg-open.
+        Command::new("xdg-open")
+            .arg(dir_str)
+            .spawn()
+            .map_err(|e| format!("Failed to open file location: {}", e))?;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        let _ = dir_str;
+        Err("open_file_location is only supported on Windows and Linux".to_string())
     }
 }
 

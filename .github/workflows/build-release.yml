@@ -91,6 +91,77 @@ jobs:
             Local-Share-portable-x86_64.zip
           retention-days: 30
 
+  build-linux:
+    name: Build Linux Packages
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux System Dependencies
+        # Tauri 2.x requires webkit2gtk-4.1 (not 4.0) plus the GTK/appindicator
+        # toolchain to compile, and patchelf for AppImage bundling. Pinned to
+        # ubuntu-22.04 so the webkit2gtk-4.1 package is the one present at build
+        # time (newer Ubuntu shipped a different abi split).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+
+      - name: Build Frontend
+        run: npm run build
+
+      - name: Build Tauri App for Linux
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          retryAttempts: 3
+          # Native x86_64 only (mirrors the Windows x86_64-only target). No
+          # --target → builds for the runner's host triple (x86_64-unknown-linux-gnu).
+          # Produces .deb / .rpm / .AppImage under target/release/bundle/.
+
+      - name: List Built Linux Packages
+        run: |
+          echo "=== Linux bundles ==="
+          find src-tauri/target/release/bundle -type f | sort
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: src-tauri/target/release/bundle/**/*
+          retention-days: 30
+
   build-android:
     name: Build Android APK
     runs-on: ubuntu-latest
@@ -200,7 +271,7 @@ jobs:
 
   create-release:
     name: Create Combined Release
-    needs: [build-windows, build-android]
+    needs: [build-windows, build-linux, build-android]
     runs-on: ubuntu-latest
     # Every push to master builds and publishes a fresh, real (non-pre-)
     # release. Each release gets a unique tag so they pile up as history.
@@ -258,6 +329,11 @@ jobs:
             echo "- \`*-android-x86_64.apk\` — Intel/AMD 64-bit (emulators, some tablets)"
             echo "- \`*-android-x86.apk\` — Intel/AMD 32-bit (emulators)"
             echo ""
+            echo "**Linux (x86_64)**"
+            echo "- \`*-linux-amd64.deb\` — Debian/Ubuntu (double-click to install)"
+            echo "- \`*-linux-x86_64.rpm\` — Fedora/RHEL/openSUSE"
+            echo "- \`*-linux-x86_64.AppImage\` — universal, portable (chmod +x and run)"
+            echo ""
             echo "---"
             echo "Built from commit \`${GITHUB_SHA::7}\` on \`master\`."
           } > release_notes.md
@@ -275,6 +351,12 @@ jobs:
         with:
           name: android-apk
           path: ./artifacts/android
+
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: ./artifacts/linux
 
       - name: Rename artifacts to clean names
         shell: bash
@@ -305,6 +387,16 @@ jobs:
             xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-android-x86_64.apk" 2>/dev/null || true
           find ./artifacts/android -path "*x86*" -name "*.apk" -not -path "*x86_64*" -type f | head -n1 | \
             xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-android-x86.apk" 2>/dev/null || true
+
+          # Linux: one asset per package format. All are x86_64 (the only
+          # target this job builds). Pick by extension under the per-format
+          # bundle directory Tauri emits (deb/, rpm/, appimage/).
+          find ./artifacts/linux -name "*.deb" -type f | head -n1 | \
+            xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-linux-amd64.deb" 2>/dev/null || true
+          find ./artifacts/linux -name "*.rpm" -type f | head -n1 | \
+            xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-linux-x86_64.rpm" 2>/dev/null || true
+          find ./artifacts/linux -name "*.AppImage" -type f | head -n1 | \
+            xargs -I{} cp {} "./artifacts/out/Local-Share-${TAG}-linux-x86_64.AppImage" 2>/dev/null || true
 
           echo "=== Final release assets ==="
           ls -la ./artifacts/out

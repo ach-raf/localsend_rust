@@ -1,161 +1,83 @@
 # Local Share
 
-A cross-platform file sharing application built with Tauri, React, and TypeScript.
+Local Share sends files and text directly between devices on the same local
+network. It does not require an account, a cloud service, or an internet
+connection once the app is installed.
 
-## Features
+Local Share is available for Windows, Linux, and Android. It is an independent
+project and does not implement the LocalSend protocol; both devices must be
+running Local Share.
 
-- 🚀 Fast and lightweight file transfers
-- 🔒 Secure local network sharing
-- 📱 Cross-platform: Windows, Android (and more coming soon)
-- 🎨 Modern and intuitive UI built with React and Mantine
+## What it does
+
+- Finds other Local Share devices automatically over mDNS.
+- Sends one or more files with transfer progress on both devices.
+- Lets the receiving device accept or reject an incoming transfer.
+- Sends short text messages between devices.
+- Saves received files to the device's Downloads folder.
+- Supports drag-and-drop on desktop and the Android system file picker.
+- Shows completion notifications, including native Android notifications when
+  the app is in the background.
+- Lets you change the device name and network port.
+
+## Download
+
+Install the latest build from [GitHub Releases](https://github.com/ach-raf/localsend_rust/releases):
+
+- Windows: installer or portable x86_64 ZIP
+- Linux x86_64: AppImage, `.deb`, or `.rpm`
+- Android: universal APK or an architecture-specific APK
+
+On Android, use the universal APK if you do not know which architecture your
+device uses.
+
+## Using Local Share
+
+1. Install and open Local Share on both devices.
+2. Connect both devices to the same local network.
+3. Wait for the other device to appear, then select it.
+4. Choose files, drag files onto the device on desktop, or type a message.
+5. Confirm the transfer on the receiving device. Received files are saved to
+   Downloads.
+
+If devices do not appear, make sure Local Share is open on both devices and
+that the operating system or firewall allows local-network access. The default
+transfer port is `3030` and can be changed in Settings.
+
+## Network and privacy
+
+Files and messages travel directly between devices over the local network;
+Local Share does not upload them to an external server. Transfers use HTTP and
+are not encrypted, so use the app only on networks and with devices you trust.
+Incoming file transfers require approval from the receiving device.
+
+## Demo videos
+
+The two recordings show the same transfer from the sending PC and receiving
+Android device.
+
+| PC — sending | Android — receiving |
+| :---: | :---: |
+| [Watch the PC send a file](<screenshots/2026-07-31 19_41_31-Naruto_Shippuden-explorer.mp4>) | [Watch Android receive it](<screenshots/Screen_Recording_20260731_194230_Local Share.mp4>) |
 
 ## Screenshots
 
-### Desktop Version
+### Sending
 
-<img src="screenshots/2025-12-25%2021_50_14-Local_Share-local-share.png" alt="Desktop Home" width="800" />
-_Home screen with nearby peers_
+| | |
+| :---: | :---: |
+| <img src="screenshots/2026-07-31%2019_45_21-Local_Share-local-share.png" alt="Local Share waiting to discover nearby devices" width="360" /><br><sub><b>Waiting for devices</b><br>Local Share listens for nearby peers.</sub> | <img src="screenshots/2026-07-31%2019_45_29-Local_Share-local-share.png" alt="Local Share showing a discovered Android peer" width="360" /><br><sub><b>Peer discovered</b><br>The Android device appears automatically.</sub> |
+| <img src="screenshots/2026-07-31%2019_45_39-Local_Share-local-share.png" alt="Dragging a file onto a nearby peer in Local Share" width="360" /><br><sub><b>Drop to send</b><br>Drag a file directly onto the peer.</sub> | <img src="screenshots/2026-07-31%2019_45_46-Local_Share-local-share.png" alt="Local Share file selection panel for a nearby peer" width="360" /><br><sub><b>Choose files</b><br>Select one or more files for the chosen peer.</sub> |
+| <img src="screenshots/2026-07-31%2019_45_52-Local_Share-local-share.png" alt="Local Share successful file sent notification" width="360" /><br><sub><b>Sent successfully</b><br>The sender gets immediate confirmation.</sub> | |
 
-<img src="screenshots/2025-12-25%2021_50_46-Local_Share-local-share.png" alt="Desktop Peer Selected" width="800" />
-_Selecting a peer to send files_
+### Receiving
 
-<img src="screenshots/2025-12-25%2021_51_04-Local_Share-local-share.png" alt="Desktop Text Message" width="800" />
-_Sending text messages_
-
-<img src="screenshots/2025-12-25%2021_51_12-Local_Share-local-share.png" alt="Desktop Settings" width="800" />
-_Settings configuration_
-
-<img src="screenshots/2025-12-25%2021_52_49-Local_Share-local-share.png" alt="Desktop Incoming Transfer" width="800" />
-_Incoming file transfer request_
-
-<img src="screenshots/2025-12-25%2021_53_05-Local_Share-local-share.png" alt="Desktop File Received" width="800" />
-_File received notification_
-
-### Mobile Version
-
-<img src="screenshots/Screenshot_20251225_215124_Local%20Share.jpg" alt="Mobile Home" width="400" />
-_Mobile home screen_
-
-<img src="screenshots/Screenshot_20251225_215136_Local%20Share.jpg" alt="Mobile Send Files" width="400" />
-_Sending files from mobile_
-
-<img src="screenshots/Screenshot_20251225_215141_Local%20Share.jpg" alt="Mobile Send Text" width="400" />
-_Sending text messages from mobile_
-
-<img src="screenshots/Screenshot_20251225_215218_Local%20Share.jpg" alt="Mobile Incoming Transfer" width="400" />
-_Incoming file transfer on mobile_
-
-## Building the App
-
-> **⚠️ Pass flags with `npx`, not `npm run`.**
-> `npm run tauri android build -- --apk` produces `npm warn Unknown cli config "--apk"`. npm inspects **every** flag on the line — even the ones after `--` — against its own config, warns about the ones it doesn't know, and a future npm version will drop them entirely ([npm/cli#9353](https://github.com/npm/cli/issues/9353)).
-> `npx tauri ...` runs the CLI directly, so the flags reach Tauri untouched. Use `npm run tauri X` only for commands with **no** flags (`dev`, `build`, `android init`).
-
-### Build for Current Platform (desktop)
-
-```bash
-npm run tauri build      # no flags → npm run is fine
-```
-
-### Build for Android
-
-**⚠️ First-time setup**: Android APKs must be signed. See [ANDROID_SIGNING.md](ANDROID_SIGNING.md) for the full guide (current setup, CI, troubleshooting, backups, and production signing).
-
-```bash
-# Initialize Android project (first time only) — no flags, npm run is fine
-npm run tauri android init
-
-# Build a single universal signed APK (smallest command, one file for all devices)
-npx tauri android build --apk
-
-# Build one signed APK per architecture (smaller per-device downloads)
-npx tauri android build --split-per-abi --apk
-```
-
-The flags (from `npx tauri android build --help`):
-
-| Flag | Meaning |
-| --- | --- |
-| `--apk` | Build APKs (Play Store submission uses `--aab` instead) |
-| `--aab` | Build AABs (Android App Bundle) |
-| `--split-per-abi` | Split the output per ABI instead of one universal bundle |
-| `-t, --target <TARGETS>` | Build only specific targets: `aarch64`, `armv7`, `i686`, `x86_64` |
-| `-d, --debug` | Debug build instead of release |
-
-> `--apk` and `--aab` are boolean flags — write `--apk`, **not** `--apk true`. Omitting both builds APK + AAB.
-
-**Output** (under `src-tauri/gen/android/app/build/outputs/apk/`):
-
-- Universal build (`--apk`): `universal/release/app-universal-release.apk`
-- Split build (`--split-per-abi --apk`): one APK per ABI —
-
-  ```
-  arm64/release/app-arm64-release.apk       ← modern 64-bit phones (use this one)
-  arm/release/app-arm-release.apk           ← older 32-bit phones
-  x86_64/release/app-x86_64-release.apk     ← emulators / tablets
-  x86/release/app-x86-release.apk           ← rare devices
-  ```
-
-## Automated Builds with GitHub Actions
-
-This project includes a GitHub Actions workflow that automatically builds Windows executables and Android APKs.
-
-### Quick Start with GitHub Actions
-
-1. **Push to the release branch**:
-
-   ```bash
-   git checkout -b release
-   git push origin release
-   ```
-
-   This creates build artifacts available in the GitHub Actions tab.
-
-2. **Create a release with a version tag**:
-
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-
-   This creates a GitHub release with both Windows and Android builds.
-
-For more details, see [.github/workflows/README.md](.github/workflows/README.md)
-
-### Setting Up Android Signing for CI/CD
-
-To use your production keystore in GitHub Actions, add these secrets to your repository:
-
-- `ANDROID_KEYSTORE_BASE64` - Base64 encoded keystore file
-- `ANDROID_KEYSTORE_PASSWORD` - Keystore password
-- `ANDROID_KEY_PASSWORD` - Key password
-- `ANDROID_KEY_ALIAS` - Key alias
-
-See [ANDROID_SIGNING.md](ANDROID_SIGNING.md) for detailed instructions.
+| | |
+| :---: | :---: |
+| <img src="screenshots/2026-07-31%2019_46_05-Local_Share-local-share.png" alt="Local Share incoming file transfer confirmation dialog" width="360" /><br><sub><b>Incoming request</b><br>The receiver can accept or reject the file.</sub> | <img src="screenshots/2026-07-31%2019_46_10-Local_Share-local-share.png" alt="Local Share file received notification" width="360" /><br><sub><b>File received</b><br>The completed transfer is ready to open.</sub> |
 
 ## Development
 
-### Prerequisites
-
-- Node.js 18+
-- Rust 1.70+
-- For Android: Android SDK, NDK, Java 17+
-
-### Running in Development Mode
-
-```bash
-npm install
-npm run tauri dev     # no flags → npm run is fine
-```
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
-
-## Technology Stack
-
-- **Frontend**: React 19, TypeScript, Vite
-- **UI Framework**: Mantine
-- **Backend**: Rust, Tauri 2.0
-- **Server**: Axum (HTTP server)
-- **Networking**: mDNS for device discovery
+Build instructions, platform prerequisites, verification commands, architecture
+notes, and release details are in [DEVELOPMENT.md](DEVELOPMENT.md). Android
+signing is documented separately in [ANDROID_SIGNING.md](ANDROID_SIGNING.md).
