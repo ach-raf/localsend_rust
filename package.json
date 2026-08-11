@@ -29,7 +29,7 @@
     "react-router-dom": "^7.11.0",
     "sonner": "^2.0.7",
     "tauri-plugin-android-fs-api": "^29.0.0",
-    "tauri-plugin-android-share-target-api": "git+https://github.com./ach-raf/tauri-plugin-android-share-target.git#97af31f18f3ac5634d301dcd435e7d10f61d1e7e"
+    "tauri-plugin-android-share-target-api": "git+https://github.com/ach-raf/tauri-plugin-android-share-target.git#97af31f18f3ac5634d301dcd435e7d10f61d1e7e"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
