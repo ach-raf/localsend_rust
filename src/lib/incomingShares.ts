@@ -17,6 +17,22 @@ export function createIncomingShareProgress(): IncomingShareProgress {
   return { peerKey: null, filesSent: false, textSent: false };
 }
 
+export function enqueueIncomingShare(
+  shares: IncomingShare[],
+  share: IncomingShare,
+): IncomingShare[] {
+  return shares.some((item) => item.id === share.id)
+    ? shares
+    : [...shares, share];
+}
+
+export function removeIncomingShare(
+  shares: IncomingShare[],
+  id: string,
+): IncomingShare[] {
+  return shares.filter((share) => share.id !== id);
+}
+
 export function getIncomingShareText(share: IncomingShare): string | null {
   const subject = share.subject?.trim() ?? "";
   const body = (share.text ?? share.htmlText)?.trim() ?? "";
@@ -55,8 +71,5 @@ export async function forwardIncomingShare(
     progress.textSent = true;
   }
 
-  const removed = await actions.acknowledge(share.id);
-  if (!removed) {
-    throw new Error("The completed share could not be removed from the queue");
-  }
+  await actions.acknowledge(share.id);
 }

@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { IncomingShare } from "tauri-plugin-android-share-target-api";
 import {
   createIncomingShareProgress,
+  enqueueIncomingShare,
   forwardIncomingShare,
   getIncomingShareText,
+  removeIncomingShare,
 } from "./incomingShares";
 
 const peer = { ip: "192.168.1.20", port: 3030, alias: "Peer" };
@@ -32,6 +34,29 @@ describe("getIncomingShareText", () => {
     expect(getIncomingShareText(share({ htmlText: "<b>Hello</b>" }))).toBe(
       "<b>Hello</b>",
     );
+  });
+});
+
+describe("incoming share queue state", () => {
+  it("appends shares in FIFO order without duplicating an existing ID", () => {
+    const first = share({ id: "first" });
+    const second = share({ id: "second" });
+
+    const queued = enqueueIncomingShare(
+      enqueueIncomingShare(enqueueIncomingShare([], first), second),
+      first,
+    );
+
+    expect(queued.map((item) => item.id)).toEqual(["first", "second"]);
+  });
+
+  it("removes only the acknowledged share", () => {
+    expect(
+      removeIncomingShare(
+        [share({ id: "first" }), share({ id: "second" })],
+        "first",
+      ).map((item) => item.id),
+    ).toEqual(["second"]);
   });
 });
 
@@ -168,7 +193,7 @@ describe("forwardIncomingShare", () => {
     expect(actions.acknowledge).not.toHaveBeenCalled();
   });
 
-  it("rejects when the native queue does not remove the share", async () => {
+  it("treats an already absent native queue item as completed", async () => {
     const actions = {
       sendFiles: vi.fn(async () => undefined),
       sendText: vi.fn(async () => undefined),
@@ -182,6 +207,7 @@ describe("forwardIncomingShare", () => {
         createIncomingShareProgress(),
         actions,
       ),
-    ).rejects.toThrow("could not be removed");
+    ).resolves.toBeUndefined();
+    expect(actions.acknowledge).toHaveBeenCalledWith("share-1");
   });
 });
