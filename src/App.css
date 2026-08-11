@@ -108,25 +108,12 @@ body {
   background-color: var(--bg-light);
   background-image: none;
   border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--accent-primary);
   border-radius: var(--radius-control);
   box-shadow: var(--shadow-m);
   font-family: var(--font-body);
   gap: 10px;
   min-height: 56px;
   padding: 11px 40px 11px 12px;
-}
-
-[data-sonner-toaster] [data-sonner-toast].depth-toast[data-type="success"] {
-  border-left-color: var(--accent-success);
-}
-
-[data-sonner-toaster] [data-sonner-toast].depth-toast[data-type="warning"] {
-  border-left-color: var(--accent-warning);
-}
-
-[data-sonner-toaster] [data-sonner-toast].depth-toast[data-type="error"] {
-  border-left-color: var(--accent-danger);
 }
 
 [data-sonner-toaster] [data-sonner-toast].depth-toast [data-content] {
@@ -406,11 +393,6 @@ body {
   box-shadow: var(--shadow-inset);
 }
 
-.incoming-share-notice,
-.incoming-share-card {
-  border-left: 3px solid var(--accent-primary);
-}
-
 .incoming-share-notice {
   padding: 12px;
 }
@@ -463,16 +445,6 @@ body {
   background-color: var(--bg-light);
   border-color: var(--accent-primary);
   box-shadow: var(--shadow-m);
-}
-.peer-card.selected::before {
-  content: "";
-  position: absolute;
-  left: -1px;
-  top: 16%;
-  bottom: 16%;
-  width: 3px;
-  border-radius: 3px;
-  background: var(--accent-primary);
 }
 .peer-card.peer-drop-target {
   background-color: var(--bg-lighter);
