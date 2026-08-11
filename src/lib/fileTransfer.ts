@@ -39,12 +39,13 @@ export async function sendFilePathsToPeer(
   );
 
   if (!accepted) {
+    const message = `The peer rejected the transfer of ${filesMetadata.length} files.`;
     notifications.show({
       title: "Transfer Rejected",
-      message: `The peer rejected the transfer of ${filesMetadata.length} files.`,
+      message,
       color: "yellow",
     });
-    return;
+    throw new Error(message);
   }
 
   for (let index = 0; index < filePaths.length; index += 1) {
@@ -87,6 +88,7 @@ export async function sendFilePathsToPeer(
         loading: false,
         autoClose: 5000,
       });
+      throw new Error(message);
     }
   }
 }

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "vitest run",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -27,7 +28,8 @@
     "react-dom": "^19.2.3",
     "react-router-dom": "^7.11.0",
     "sonner": "^2.0.7",
-    "tauri-plugin-android-fs-api": "^29.0.0"
+    "tauri-plugin-android-fs-api": "^29.0.0",
+    "tauri-plugin-android-share-target-api": "github:ach-raf/tauri-plugin-android-share-target#4f1c552360f66d576867d979096c8738dc67c51c"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
@@ -38,6 +40,7 @@
     "autoprefixer": "^10.4.23",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.9.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^3.2.7"
   }
 }

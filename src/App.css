@@ -406,6 +406,36 @@ body {
   box-shadow: var(--shadow-inset);
 }
 
+.incoming-share-notice,
+.incoming-share-card {
+  border-left: 3px solid var(--accent-primary);
+}
+
+.incoming-share-notice {
+  padding: 12px;
+}
+
+.incoming-share-card {
+  padding: 16px;
+}
+
+.incoming-share-file {
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+}
+
+.incoming-share-text {
+  max-height: 7rem;
+  overflow: auto;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.incoming-share-actions > * {
+  min-width: 180px;
+}
+
 /* ============================================
    PEER CARDS — CSS-driven states (no JS)
    ============================================ */

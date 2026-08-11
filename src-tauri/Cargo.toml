@@ -52,3 +52,4 @@ tauri-plugin-android-fs = { version = "29.0.0", features = [
 tauri-plugin-upload = "2.4.0"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-notification = "2.3.3"
+tauri-plugin-android-share-target = { git = "https://github.com/ach-raf/tauri-plugin-android-share-target.git", rev = "4f1c552360f66d576867d979096c8738dc67c51c" }
