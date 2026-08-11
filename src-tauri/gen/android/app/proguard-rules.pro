@@ -25,6 +25,4 @@
 
 # The share-target plugin returns these models through Tauri's Jackson bridge.
 # Preserve their field names so release builds expose the same JSON as debug builds.
--keep class com.achraf.androidsharetarget.PendingSharesResponse { *; }
--keep class com.achraf.androidsharetarget.NativeIncomingShare { *; }
--keep class com.achraf.androidsharetarget.NativeSharedFile { *; }
+-keep class com.achraf.androidsharetarget.** { *; }
