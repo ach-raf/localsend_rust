@@ -33,17 +33,13 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
-import { showOpenFilePicker, isAndroid } from "tauri-plugin-android-fs-api";
+import { showOpenFilePicker } from "tauri-plugin-android-fs-api";
 import TextMessageModal from "../components/TextMessageModal";
 import FileTransferConfirmModal from "../components/FileTransferConfirmModal";
 import { usePullToRefresh } from "../hooks/usePullToRefresh";
+import { useIncomingShareQueue } from "../hooks/useIncomingShareQueue";
 import { sendFilePathsToPeer } from "../lib/fileTransfer";
-import {
-  acknowledgeShare,
-  getPendingShares,
-  onShareAvailable,
-  type IncomingShare,
-} from "tauri-plugin-android-share-target-api";
+import { detectAndroid } from "../lib/platform";
 import {
   createIncomingShareProgress,
   forwardIncomingShare,
@@ -89,6 +85,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function Home() {
+  const androidEnabled = useMemo(detectAndroid, []);
   const [peers, setPeers] = useState<Peer[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
   const [message, setMessage] = useState("");
@@ -105,7 +102,11 @@ export default function Home() {
   const [dragTargetPeerKey, setDragTargetPeerKey] = useState<string | null>(
     null,
   );
-  const [pendingShares, setPendingShares] = useState<IncomingShare[]>([]);
+  const {
+    shares: pendingShares,
+    currentShare: pendingShare,
+    acknowledge: acknowledgeIncomingShare,
+  } = useIncomingShareQueue(androidEnabled);
 
   // Use ref to access current selectedPeer in event handlers without re-subscribing
   const selectedPeerRef = useRef<Peer | null>(null);
@@ -115,15 +116,9 @@ export default function Home() {
     new Map<string, IncomingShareProgress>(),
   );
 
-  const pendingShare = pendingShares[0] ?? null;
   const pendingShareText = pendingShare
     ? getIncomingShareText(pendingShare)
     : null;
-
-  const refreshIncomingShares = useCallback(async () => {
-    const shares = await getPendingShares();
-    setPendingShares(shares);
-  }, []);
 
   useEffect(() => {
     selectedPeerRef.current = selectedPeer;
@@ -138,25 +133,6 @@ export default function Home() {
     invoke("refresh_peers").catch((e) => {
       console.error("Failed to trigger initial discovery:", e);
     });
-
-    let shareListenerDisposed = false;
-    const shareListener = onShareAvailable(() => {
-      void refreshIncomingShares().catch((error) => {
-        console.error("Failed to refresh incoming shares:", error);
-      });
-    })
-      .then(async (listener) => {
-        if (shareListenerDisposed) {
-          await listener.unregister();
-          return null;
-        }
-        await refreshIncomingShares();
-        return listener;
-      })
-      .catch((error) => {
-        console.error("Failed to initialize Android share target:", error);
-        return null;
-      });
 
     // Listen for peer updates
     const unlistenPeers = listen<Peer[]>("peers-update", (event) => {
@@ -420,8 +396,6 @@ export default function Home() {
     );
 
     return () => {
-      shareListenerDisposed = true;
-      void shareListener.then((listener) => listener?.unregister());
       unlistenPeers.then((f) => f());
       unlistenFileStart.then((f) => f());
       unlistenFileComplete.then((f) => f());
@@ -435,7 +409,7 @@ export default function Home() {
       unlistenFileDrop.then((f) => f());
       unlistenProgress.then((f) => f());
     };
-  }, [refreshIncomingShares]);
+  }, []);
 
   const handleSelectFiles = async () => {
     if (!selectedPeer) {
@@ -451,7 +425,7 @@ export default function Home() {
       let filePaths: string[] = [];
 
       // Use Android FS API on Android, dialog plugin on other platforms
-      if (isAndroid()) {
+      if (androidEnabled) {
         try {
           const uris = await showOpenFilePicker({
             multiple: true,
@@ -587,10 +561,9 @@ export default function Home() {
             text,
           });
         },
-        acknowledge: acknowledgeShare,
+        acknowledge: acknowledgeIncomingShare,
       });
       shareProgressRef.current.delete(pendingShare.id);
-      await refreshIncomingShares();
       notifications.show({
         title: "Shared content sent",
         message: `Sent to ${selectedPeer.alias}`,
@@ -613,10 +586,8 @@ export default function Home() {
     if (!pendingShare || sendingRef.current) return;
 
     try {
-      const removed = await acknowledgeShare(pendingShare.id);
-      if (!removed) throw new Error("The share was no longer in the queue");
+      await acknowledgeIncomingShare(pendingShare.id);
       shareProgressRef.current.delete(pendingShare.id);
-      await refreshIncomingShares();
       notifications.show({
         title: "Shared content discarded",
         message: "The item was removed from the pending queue.",
@@ -661,20 +632,12 @@ export default function Home() {
     }
   };
 
-  // Pull-to-refresh — Android only. isAndroid() throws on desktop because the
-  // injected global is absent, so resolve it once up front and default to false.
-  const ptrEnabled = useMemo(() => {
-    try {
-      return isAndroid();
-    } catch {
-      return false;
-    }
-  }, []);
+  // Pull-to-refresh — Android only.
   // Refs the hook drives directly (no React renders during the drag).
   const ptrContentRef = useRef<HTMLDivElement>(null);
   const ptrSpinnerRef = useRef<HTMLDivElement>(null);
   const { refreshing: ptrRefreshing, armed: ptrArmed } = usePullToRefresh({
-    enabled: ptrEnabled,
+    enabled: androidEnabled,
     onRefresh: refreshPeers,
     contentRef: ptrContentRef,
     spinnerRef: ptrSpinnerRef,
@@ -738,7 +701,7 @@ export default function Home() {
       {/* Pull-to-refresh indicator (Android only). Always mounted when enabled;
           its opacity/scale are driven by the --ptr-progress CSS variable set by
           the hook, so revealing it costs no React renders. */}
-      {ptrEnabled && (
+      {androidEnabled && (
         <div
           className={`ptr-indicator${ptrRefreshing ? " is-refreshing" : ""}`}
           aria-hidden="true"
@@ -1035,12 +998,13 @@ export default function Home() {
                       </Text>
                     ) : null}
 
-                    <Group grow gap="sm" className="incoming-share-actions">
+                    <Stack gap="sm" className="incoming-share-actions">
                       <Button
                         leftSection={<IconShare3 size={18} />}
                         onClick={handleSendIncomingShare}
                         loading={sending}
                         className="depth-button-primary"
+                        fullWidth
                       >
                         Send shared content
                       </Button>
@@ -1050,14 +1014,15 @@ export default function Home() {
                         disabled={sending}
                         variant="light"
                         color="red"
+                        fullWidth
                       >
                         Discard
                       </Button>
-                    </Group>
+                    </Stack>
                   </div>
-                ) : null}
+                ) : (
 
-                <Tabs defaultValue="files">
+                  <Tabs defaultValue="files">
                   <Tabs.List
                     mb="lg"
                     className="responsive-tabs-list"
@@ -1232,7 +1197,8 @@ export default function Home() {
                       </Button>
                     </Stack>
                   </Tabs.Panel>
-                </Tabs>
+                  </Tabs>
+                )}
               </Paper>
             ) : (
               <Paper

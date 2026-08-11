@@ -22,7 +22,3 @@
 
 # The notification plugin uses Jackson/reflection for its Android command models.
 -keep class app.tauri.notification.** { *; }
-
-# The share-target plugin returns these models through Tauri's Jackson bridge.
-# Preserve their field names so release builds expose the same JSON as debug builds.
--keep class com.achraf.androidsharetarget.** { *; }
