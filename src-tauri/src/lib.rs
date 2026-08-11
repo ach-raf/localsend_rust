@@ -87,7 +87,10 @@ fn save_settings(
                 "No live registration daemon; registering fresh service as '{}'",
                 new_config.alias
             );
-            let daemon = register_service(&new_config.alias, new_config.port)?;
+            let daemon = ServiceDaemon::new()
+                .map_err(|e| format!("Failed to create ServiceDaemon: {}", e))?;
+            register_service(&daemon, &new_config.alias, new_config.port)?;
+            start_discovery(app.clone(), new_config.alias.clone(), daemon.clone());
             *state.service_daemon.lock().unwrap() = Some(daemon);
         }
 
@@ -433,17 +436,23 @@ pub fn run() {
             eprintln!("Starting LocalShare Rust on port {}", port);
             eprintln!("Device alias: {}", alias);
 
-            // Register Service and keep daemon alive
-            let daemon = match register_service(&alias, port) {
+            // One daemon owns both registration and browsing. `ServiceDaemon`
+            // clones are handles to the same worker, not additional mDNS sockets.
+            let daemon = match ServiceDaemon::new() {
                 Ok(d) => {
-                    eprintln!("✓ Service registered successfully");
+                    if let Err(e) = register_service(&d, &alias, port) {
+                        eprintln!("✗ Failed to register service: {}", e);
+                    } else {
+                        eprintln!("✓ Service registered successfully");
+                    }
                     Some(d)
                 }
                 Err(e) => {
-                    eprintln!("✗ Failed to register service: {}", e);
+                    eprintln!("✗ Failed to create mDNS daemon: {}", e);
                     None
                 }
             };
+            let discovery_daemon = daemon.clone();
 
             let pending_transfers = PendingTransfers {
                 transfers: Arc::new(Mutex::new(HashMap::new())),
@@ -476,7 +485,11 @@ pub fn run() {
 
             // Start Discovery
             eprintln!("Starting discovery service...");
-            start_discovery(app.handle().clone(), alias.clone());
+            if let Some(daemon) = discovery_daemon {
+                start_discovery(app.handle().clone(), alias.clone(), daemon);
+            } else {
+                eprintln!("✗ Discovery unavailable because the mDNS daemon failed to start");
+            }
 
             // Start HTTP Server
             let handle = app.handle().clone();
