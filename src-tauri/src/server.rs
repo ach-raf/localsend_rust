@@ -1,6 +1,7 @@
+use crate::discovery::{handle_announce, local_device_info, DeviceInfo};
 use crate::PendingTransfers;
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, State},
+    extract::{ConnectInfo, DefaultBodyLimit, Multipart, State},
     routing::{get, post},
     Json, Router,
 };
@@ -125,6 +126,9 @@ pub async fn start_server(
         .route("/request", post(request_handler))
         .route("/message", post(message_handler))
         .route("/ping", get(|| async { "pong" }))
+        // Discovery: identity probe + two-way introduction (see discovery.rs).
+        .route("/info", get(info_handler))
+        .route("/announce", post(announce_handler))
         .layer(DefaultBodyLimit::disable()) // Disable body size limit for file transfers
         .with_state(state);
 
@@ -133,7 +137,24 @@ pub async fn start_server(
     println!("Server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app_router).await.unwrap();
+    // ConnectInfo lets /announce see the caller's real IP.
+    axum::serve(
+        listener,
+        app_router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
+}
+
+async fn info_handler() -> Json<DeviceInfo> {
+    Json(local_device_info())
+}
+
+async fn announce_handler(
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
+    Json(info): Json<DeviceInfo>,
+) -> Json<DeviceInfo> {
+    Json(handle_announce(remote.ip(), info))
 }
 
 async fn upload_handler(State(state): State<ServerState>, mut multipart: Multipart) {
