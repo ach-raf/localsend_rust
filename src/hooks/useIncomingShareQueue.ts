@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   acknowledgeShare,
+  getPendingShares,
   listenIncomingShares,
   type IncomingShare,
 } from "tauri-plugin-android-share-target-api";
@@ -42,8 +43,30 @@ export function useIncomingShareQueue(enabled: boolean): IncomingShareQueue {
         }
       });
 
+    // Safety net: the native "share available" event can fire before the
+    // webview is listening (cold start from another app). The native queue is
+    // authoritative, so re-read it whenever the app comes back to the front.
+    const resync = () => {
+      if (document.visibilityState !== "visible") return;
+      getPendingShares()
+        .then((pending) => {
+          if (disposed) return;
+          setShares((current) =>
+            pending.reduce(
+              (acc, share) => enqueueIncomingShare(acc, share),
+              current,
+            ),
+          );
+        })
+        .catch((error) => console.error("Failed to resync shares:", error));
+    };
+    document.addEventListener("visibilitychange", resync);
+    window.addEventListener("focus", resync);
+
     return () => {
       disposed = true;
+      document.removeEventListener("visibilitychange", resync);
+      window.removeEventListener("focus", resync);
       stopListening?.();
     };
   }, [enabled]);
