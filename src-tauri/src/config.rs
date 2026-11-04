@@ -6,6 +6,11 @@ use tauri::{AppHandle, Manager};
 pub struct AppConfig {
     pub alias: String,
     pub port: u16,
+    /// Stable per-install identity used by discovery (mDNS instance name, peer
+    /// key, self-filter). Generated once and persisted; never user-editable.
+    /// `default` so old settings files and frontend payloads without it load.
+    #[serde(default)]
+    pub device_id: String,
 }
 
 pub fn generate_anime_name() -> String {
@@ -460,6 +465,7 @@ impl Default for AppConfig {
         Self {
             alias: generate_anime_name(),
             port: 3030,
+            device_id: uuid::Uuid::new_v4().to_string(),
         }
     }
 }
@@ -480,9 +486,17 @@ pub fn load_config(app: &AppHandle) -> AppConfig {
             if let Ok(content) = fs::read_to_string(&config_path) {
                 if let Ok(mut config) = serde_json::from_str::<AppConfig>(&content) {
                     // If the name looks like it came from the old generator, regenerate it
+                    let mut dirty = false;
                     if is_old_style_name(&config.alias) {
                         config.alias = generate_anime_name();
-                        // Save the updated config with the new anime name
+                        dirty = true;
+                    }
+                    // Settings files from before discovery v2 have no identity.
+                    if config.device_id.trim().is_empty() {
+                        config.device_id = uuid::Uuid::new_v4().to_string();
+                        dirty = true;
+                    }
+                    if dirty {
                         let _ = save_config(app, &config);
                     }
                     return config;

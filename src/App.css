@@ -1258,3 +1258,47 @@ body {
     flex: 1 1 0;
   }
 }
+
+/* ============================================
+   SHARE SHEET — Android "send to…" picker
+   ============================================ */
+
+.share-sheet {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 16px 12px calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.share-sheet-summary {
+  padding: 12px;
+  border-radius: var(--radius-control);
+}
+
+.share-sheet-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.share-sheet-searching {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.share-sheet-peer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.share-sheet-peer:disabled:not(.selected) {
+  opacity: 0.5;
+}

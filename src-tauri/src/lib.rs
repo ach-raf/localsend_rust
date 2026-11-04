@@ -4,13 +4,9 @@ mod server;
 mod transfer;
 
 use crate::config::{generate_anime_name, load_config, save_config, AppConfig};
-use crate::discovery::{
-    refresh_discovery, register_service, reregister_service_alias, start_discovery,
-    unregister_service, update_alias,
-};
+use crate::discovery::refresh_discovery;
 use crate::server::start_server;
 use crate::transfer::{send_file, send_file_bytes, send_text};
-use mdns_sd::ServiceDaemon;
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -27,8 +23,6 @@ pub struct PendingTransfers {
 
 struct AppState {
     config: Mutex<AppConfig>,
-    #[allow(dead_code)] // Kept alive to maintain mDNS registration
-    service_daemon: Mutex<Option<ServiceDaemon>>,
     pending_transfers: PendingTransfers,
     app_foreground: Arc<AtomicBool>,
 }
@@ -48,58 +42,31 @@ fn get_settings(state: State<'_, AppState>) -> AppConfig {
 fn save_settings(
     app: AppHandle,
     state: State<'_, AppState>,
-    new_config: AppConfig,
+    mut new_config: AppConfig,
 ) -> Result<(), String> {
-    let old_alias = {
+    let (old_alias, device_id) = {
         let config = state.config.lock().unwrap();
-        config.alias.clone()
+        (config.alias.clone(), config.device_id.clone())
     };
+
+    // The identity is owned by the backend; the UI payload never carries it.
+    new_config.device_id = device_id;
 
     let mut config = state.config.lock().unwrap();
     *config = new_config.clone();
     save_config(&app, &new_config)?;
     drop(config); // Release lock before doing heavy operations
 
-    // If alias changed, re-register mDNS service and update discovery
     if old_alias != new_config.alias {
         eprintln!(
-            "Alias changed from '{}' to '{}', re-registering service...",
+            "Alias changed from '{}' to '{}'",
             old_alias, new_config.alias
         );
-
-        // Rename on the EXISTING registration daemon: announce the new alias,
-        // then goodbye the old one. We avoid `shutdown()` because it does NOT
-        // send an mDNS goodbye (only `unregister()` does), and we keep the same
-        // daemon alive instead of tearing it down + sleeping + recreating.
-        let renamed_existing = {
-            let daemon_lock = state.service_daemon.lock().unwrap();
-            if let Some(daemon) = daemon_lock.as_ref() {
-                reregister_service_alias(daemon, &old_alias, &new_config.alias, new_config.port)?;
-                true
-            } else {
-                false
-            }
-        };
-
-        // Fallback: no live daemon (e.g. startup registration failed) — register fresh.
-        if !renamed_existing {
-            eprintln!(
-                "No live registration daemon; registering fresh service as '{}'",
-                new_config.alias
-            );
-            let daemon = ServiceDaemon::new()
-                .map_err(|e| format!("Failed to create ServiceDaemon: {}", e))?;
-            register_service(&daemon, &new_config.alias, new_config.port)?;
-            start_discovery(app.clone(), new_config.alias.clone(), daemon.clone());
-            *state.service_daemon.lock().unwrap() = Some(daemon);
-        }
-
-        // Update the discovery self-filter and notify the frontend.
-        update_alias(new_config.alias.clone())?;
+        // Identity is the device id, so a rename is just an updated TXT record
+        // plus a direct heads-up to every known peer. No goodbye, no peer churn.
+        crate::discovery::set_alias(new_config.alias.clone());
         app.emit("alias-changed", new_config.alias.clone())
             .map_err(|e| e.to_string())?;
-
-        eprintln!("Service re-registered and discovery updated successfully!");
     }
 
     Ok(())
@@ -436,23 +403,7 @@ pub fn run() {
             eprintln!("Starting LocalShare Rust on port {}", port);
             eprintln!("Device alias: {}", alias);
 
-            // One daemon owns both registration and browsing. `ServiceDaemon`
-            // clones are handles to the same worker, not additional mDNS sockets.
-            let daemon = match ServiceDaemon::new() {
-                Ok(d) => {
-                    if let Err(e) = register_service(&d, &alias, port) {
-                        eprintln!("✗ Failed to register service: {}", e);
-                    } else {
-                        eprintln!("✓ Service registered successfully");
-                    }
-                    Some(d)
-                }
-                Err(e) => {
-                    eprintln!("✗ Failed to create mDNS daemon: {}", e);
-                    None
-                }
-            };
-            let discovery_daemon = daemon.clone();
+            let device_id = config.device_id.clone();
 
             let pending_transfers = PendingTransfers {
                 transfers: Arc::new(Mutex::new(HashMap::new())),
@@ -462,7 +413,6 @@ pub fn run() {
 
             app.manage(AppState {
                 config: Mutex::new(config),
-                service_daemon: Mutex::new(daemon),
                 pending_transfers: pending_transfers.clone(),
                 app_foreground: app_foreground.clone(),
             });
@@ -483,13 +433,10 @@ pub fn run() {
                 }
             }
 
-            // Start Discovery
+            // Start discovery (mDNS + HTTP verification + subnet scan). It owns
+            // the mDNS daemon and recovers by itself if the network is not up yet.
             eprintln!("Starting discovery service...");
-            if let Some(daemon) = discovery_daemon {
-                start_discovery(app.handle().clone(), alias.clone(), daemon);
-            } else {
-                eprintln!("✗ Discovery unavailable because the mDNS daemon failed to start");
-            }
+            crate::discovery::start(app.handle().clone(), device_id, alias.clone(), port);
 
             // Start HTTP Server
             let handle = app.handle().clone();
@@ -527,6 +474,11 @@ pub fn run() {
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     state.app_foreground.store(*focused, Ordering::Relaxed);
                 }
+                // Coming back from sleep / doze / another app: multicast state
+                // is unknown, so re-query and re-verify instead of trusting it.
+                if *focused {
+                    crate::discovery::refresh_on_focus();
+                }
             }
 
             // On graceful exit, announce ourselves gone so every other client
@@ -536,12 +488,7 @@ pub fn run() {
             // until its TTL expires. `unregister()` is best-effort: if it fails
             // the app is exiting anyway.
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                let state = app_handle.state::<AppState>();
-                let alias = state.config.lock().unwrap().alias.clone();
-                let daemon = state.service_daemon.lock().unwrap();
-                if let Some(daemon) = daemon.as_ref() {
-                    unregister_service(daemon, &alias);
-                }
+                crate::discovery::shutdown();
             }
         });
 }

@@ -13,7 +13,6 @@ import {
   Button,
   ActionIcon,
   Tooltip,
-  Badge,
 } from "@mantine/core";
 import { notifications } from "../lib/notifications";
 import {
@@ -24,8 +23,6 @@ import {
   IconRefresh,
   IconX,
   IconClipboard,
-  IconShare3,
-  IconTrash,
 } from "@tabler/icons-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -34,6 +31,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { showOpenFilePicker } from "tauri-plugin-android-fs-api";
+import ShareSheet from "../components/ShareSheet";
 import TextMessageModal from "../components/TextMessageModal";
 import FileTransferConfirmModal from "../components/FileTransferConfirmModal";
 import { usePullToRefresh } from "../hooks/usePullToRefresh";
@@ -53,6 +51,7 @@ import {
 } from "../lib/receivedFiles";
 
 interface Peer {
+  id?: string;
   ip: string;
   port: number;
   alias: string;
@@ -111,6 +110,7 @@ export default function Home() {
   // Use ref to access current selectedPeer in event handlers without re-subscribing
   const selectedPeerRef = useRef<Peer | null>(null);
   const peersRef = useRef<Peer[]>([]);
+  const [shareSendingKey, setShareSendingKey] = useState<string | null>(null);
   const sendingRef = useRef(false);
   const shareProgressRef = useRef(
     new Map<string, IncomingShareProgress>(),
@@ -541,8 +541,8 @@ export default function Home() {
     }
   };
 
-  const handleSendIncomingShare = async () => {
-    if (!selectedPeer || !pendingShare || sendingRef.current) return;
+  const handleSendIncomingShare = async (peer: Peer) => {
+    if (!pendingShare || sendingRef.current) return;
 
     const progress =
       shareProgressRef.current.get(pendingShare.id) ??
@@ -550,14 +550,15 @@ export default function Home() {
     shareProgressRef.current.set(pendingShare.id, progress);
     sendingRef.current = true;
     setSending(true);
+    setShareSendingKey(`${peer.ip}:${peer.port}`);
 
     try {
-      await forwardIncomingShare(pendingShare, selectedPeer, progress, {
+      await forwardIncomingShare(pendingShare, peer, progress, {
         sendFiles: sendFilePathsToPeer,
-        sendText: async (peer, text) => {
+        sendText: async (target, text) => {
           await invoke("send_text_to_peer", {
-            peerIp: peer.ip,
-            peerPort: peer.port,
+            peerIp: target.ip,
+            peerPort: target.port,
             text,
           });
         },
@@ -565,20 +566,21 @@ export default function Home() {
       });
       shareProgressRef.current.delete(pendingShare.id);
       notifications.show({
-        title: "Shared content sent",
-        message: `Sent to ${selectedPeer.alias}`,
+        title: "Sent",
+        message: `Shared content sent to ${peer.alias}`,
         color: "phosphor",
       });
     } catch (error) {
       console.error("Failed to send incoming share:", error);
       notifications.show({
-        title: "Shared content still pending",
+        title: "Couldn't send — tap a device to retry",
         message: String(error),
         color: "red",
       });
     } finally {
       sendingRef.current = false;
       setSending(false);
+      setShareSendingKey(null);
     }
   };
 
@@ -588,19 +590,24 @@ export default function Home() {
     try {
       await acknowledgeIncomingShare(pendingShare.id);
       shareProgressRef.current.delete(pendingShare.id);
-      notifications.show({
-        title: "Shared content discarded",
-        message: "The item was removed from the pending queue.",
-        color: "yellow",
-      });
     } catch (error) {
       notifications.show({
-        title: "Unable to discard shared content",
+        title: "Unable to cancel share",
         message: String(error),
         color: "red",
       });
     }
   };
+
+  // A share just arrived (cold start or warm): kick discovery so the picker
+  // fills quickly instead of waiting for the next mDNS announcement.
+  const pendingShareId = pendingShare?.id ?? null;
+  useEffect(() => {
+    if (!pendingShareId) return;
+    invoke("refresh_peers").catch((e) =>
+      console.error("Failed to refresh peers for share:", e),
+    );
+  }, [pendingShareId]);
 
   // Core refresh — no UI side effects. Shared by the header button and the
   // pull-to-refresh gesture so they can't drift apart.
@@ -728,6 +735,17 @@ export default function Home() {
         </div>
       )}
 
+      {pendingShare ? (
+        <ShareSheet
+          share={pendingShare}
+          queuedCount={pendingShares.length}
+          text={pendingShareText}
+          peers={peers}
+          sendingKey={shareSendingKey}
+          onSend={handleSendIncomingShare}
+          onCancel={handleDiscardIncomingShare}
+        />
+      ) : (
       <Container
         ref={ptrContentRef}
         size="100%"
@@ -770,37 +788,6 @@ export default function Home() {
                   </ActionIcon>
                 </Tooltip>
               </Group>
-
-              {pendingShare ? (
-                <div className="incoming-share-notice depth-inset mb-4">
-                  <Group gap="sm" wrap="nowrap" align="flex-start">
-                    <ThemeIcon variant="light" color="phosphor" size="lg">
-                      <IconShare3 size={20} />
-                    </ThemeIcon>
-                    <div className="min-w-0 flex-1">
-                      <Group gap="xs" justify="space-between" wrap="nowrap">
-                        <Text fw={700} className="text-text-primary">
-                          Shared content ready
-                        </Text>
-                        {pendingShares.length > 1 ? (
-                          <Badge color="phosphor" variant="light" size="sm">
-                            {pendingShares.length} queued
-                          </Badge>
-                        ) : null}
-                      </Group>
-                      <Text size="sm" c="dimmed">
-                        {pendingShare.files.length > 0
-                          ? `${pendingShare.files.length} file${pendingShare.files.length === 1 ? "" : "s"}`
-                          : "Text"}
-                        {pendingShare.files.length > 0 && pendingShareText
-                          ? " and text"
-                          : ""}
-                        . Choose a nearby peer to review and send.
-                      </Text>
-                    </div>
-                  </Group>
-                </div>
-              ) : null}
 
               {peers.length === 0 ? (
                 <div className="empty-listen">
@@ -936,91 +923,6 @@ export default function Home() {
                     </ActionIcon>
                   </Tooltip>
                 </Group>
-
-                {pendingShare ? (
-                  <div className="incoming-share-card depth-card mb-4">
-                    <Group justify="space-between" align="flex-start" mb="sm">
-                      <Group gap="sm" wrap="nowrap">
-                        <ThemeIcon variant="light" color="phosphor" size="lg">
-                          <IconShare3 size={20} />
-                        </ThemeIcon>
-                        <div>
-                          <Text fw={700} className="text-text-primary">
-                            Ready to send shared content
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            Item 1 of {pendingShares.length}
-                          </Text>
-                        </div>
-                      </Group>
-                      {pendingShare.mimeType ? (
-                        <Badge variant="light" color="gray" size="sm">
-                          {pendingShare.mimeType}
-                        </Badge>
-                      ) : null}
-                    </Group>
-
-                    {pendingShare.files.length > 0 ? (
-                      <Stack gap={6} mb={pendingShareText ? "sm" : 0}>
-                        {pendingShare.files.slice(0, 4).map((file, index) => (
-                          <Group
-                            key={`${file.uri}-${index}`}
-                            gap="xs"
-                            wrap="nowrap"
-                            className="incoming-share-file depth-inset"
-                          >
-                            <IconFile size={16} className="flex-shrink-0" />
-                            <Text size="sm" truncate className="flex-1">
-                              {file.displayName || `Shared file ${index + 1}`}
-                            </Text>
-                            {file.size !== null ? (
-                              <Text size="xs" c="dimmed" className="t-mono">
-                                {formatFileSize(file.size)}
-                              </Text>
-                            ) : null}
-                          </Group>
-                        ))}
-                        {pendingShare.files.length > 4 ? (
-                          <Text size="xs" c="dimmed">
-                            +{pendingShare.files.length - 4} more files
-                          </Text>
-                        ) : null}
-                      </Stack>
-                    ) : null}
-
-                    {pendingShareText ? (
-                      <Text
-                        size="sm"
-                        className="incoming-share-text depth-inset"
-                        mb="sm"
-                      >
-                        {pendingShareText}
-                      </Text>
-                    ) : null}
-
-                    <Stack gap="sm" className="incoming-share-actions">
-                      <Button
-                        leftSection={<IconShare3 size={18} />}
-                        onClick={handleSendIncomingShare}
-                        loading={sending}
-                        className="depth-button-primary"
-                        fullWidth
-                      >
-                        Send shared content
-                      </Button>
-                      <Button
-                        leftSection={<IconTrash size={18} />}
-                        onClick={handleDiscardIncomingShare}
-                        disabled={sending}
-                        variant="light"
-                        color="red"
-                        fullWidth
-                      >
-                        Discard
-                      </Button>
-                    </Stack>
-                  </div>
-                ) : (
 
                   <Tabs defaultValue="files">
                   <Tabs.List
@@ -1198,7 +1100,6 @@ export default function Home() {
                     </Stack>
                   </Tabs.Panel>
                   </Tabs>
-                )}
               </Paper>
             ) : (
               <Paper
@@ -1218,6 +1119,7 @@ export default function Home() {
           </Grid.Col>
         </Grid>
       </Container>
+      )}
 
       {receivedMessage && (
         <TextMessageModal
