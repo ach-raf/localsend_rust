@@ -1,8 +1,13 @@
 package com.user.localshare
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Bundle
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
 
 class MainActivity : TauriActivity() {
     // Held for the lifetime of the activity so the OS keeps delivering mDNS
@@ -15,6 +20,39 @@ class MainActivity : TauriActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         acquireMulticastLock()
+    }
+
+    override fun onWebViewCreate(webView: WebView) {
+        super.onWebViewCreate(webView)
+        webView.addJavascriptInterface(NativeBridge(), "LocalShareNative")
+    }
+
+    /**
+     * Opens a received file with a plain ACTION_VIEW so Android shows its own
+     * "Open with" dialog / the user's default app, instead of the plugin's
+     * Intent.createChooser sheet. Returns "" on success, else an error message.
+     */
+    inner class NativeBridge {
+        @JavascriptInterface
+        fun openFile(uriString: String): String {
+            return try {
+                val uri = Uri.parse(uriString)
+                val mime = contentResolver.getType(uri) ?: "*/*"
+                val view = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, mime)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    startActivity(view)
+                } catch (e: ActivityNotFoundException) {
+                    return "No app installed that can open this file ($mime)"
+                }
+                ""
+            } catch (e: Exception) {
+                e.message ?: e.toString()
+            }
+        }
     }
 
     private fun acquireMulticastLock() {

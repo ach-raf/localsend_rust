@@ -1,8 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import {
-  showViewFileAppChooser,
-  type FsUri,
-} from "tauri-plugin-android-fs-api";
+import { showViewFileAppChooser, type FsUri } from "tauri-plugin-android-fs-api";
+
+// Injected by MainActivity (Android only): plain ACTION_VIEW -> native "Open with".
+declare global {
+  interface Window {
+    LocalShareNative?: { openFile(uri: string): string };
+  }
+}
 
 export interface ReceivedFileRef {
   file_path?: string;
@@ -15,6 +19,13 @@ export function hasOpenableFile(file: ReceivedFileRef): boolean {
 
 export async function openReceivedFile(file: ReceivedFileRef): Promise<void> {
   if (file.file_uri) {
+    const native = window.LocalShareNative;
+    if (native) {
+      const error = native.openFile(file.file_uri);
+      if (error) throw new Error(error);
+      return;
+    }
+    // Fallback: plugin's chooser sheet.
     const uri: FsUri = {
       uri: file.file_uri,
       documentTopTreeUri: null,
