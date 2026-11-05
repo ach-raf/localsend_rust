@@ -166,6 +166,37 @@ body {
   font-weight: 700;
 }
 
+/* Stacked layout: icon + text on top, action button as a full-width row below.
+   Side-by-side starved the text column and broke words letter by letter. */
+[data-sonner-toaster] [data-sonner-toast].depth-toast {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: 12px;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-icon] {
+  margin: 2px 0 0;
+  flex: none;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-content] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-title],
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-description] {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+[data-sonner-toaster] [data-sonner-toast].depth-toast [data-button] {
+  flex: 1 1 100%;
+  margin: 0;
+  height: 40px;
+  justify-content: center;
+}
+
 /* Touch devices: finger-sized targets (>=44px) and legible text. */
 @media (pointer: coarse), (max-width: 600px) {
   [data-sonner-toaster] [data-sonner-toast].depth-toast {
@@ -187,9 +218,7 @@ body {
   }
 
   [data-sonner-toaster] [data-sonner-toast].depth-toast [data-button] {
-    height: 44px;
-    min-width: 44px;
-    padding: 0 18px;
+    height: 46px;
     font-size: 0.9375rem;
   }
 
