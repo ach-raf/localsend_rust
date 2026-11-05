@@ -166,6 +166,41 @@ body {
   font-weight: 700;
 }
 
+/* Touch devices: finger-sized targets (>=44px) and legible text. */
+@media (pointer: coarse), (max-width: 600px) {
+  [data-sonner-toaster] [data-sonner-toast].depth-toast {
+    min-height: 64px;
+    padding: 14px 52px 14px 14px;
+  }
+
+  [data-sonner-toaster] [data-sonner-toast].depth-toast [data-title] {
+    font-size: 1rem;
+  }
+
+  [data-sonner-toaster] [data-sonner-toast].depth-toast [data-description] {
+    font-size: 0.875rem;
+  }
+
+  [data-sonner-toaster] [data-sonner-toast].depth-toast [data-icon] {
+    width: 22px;
+    height: 22px;
+  }
+
+  [data-sonner-toaster] [data-sonner-toast].depth-toast [data-button] {
+    height: 44px;
+    min-width: 44px;
+    padding: 0 18px;
+    font-size: 0.9375rem;
+  }
+
+  [data-sonner-toaster] [data-sonner-toast].depth-toast [data-close-button] {
+    width: 32px;
+    height: 32px;
+    top: 10px;
+    right: 10px;
+  }
+}
+
 /* ============================================
    ANIMATIONS
    ============================================ */

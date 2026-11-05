@@ -71,8 +71,18 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
         position="top-right"
         duration={5000}
         gap={8}
-        offset={12}
-        mobileOffset={12}
+        offset={{
+          top: "calc(12px + env(safe-area-inset-top, 0px))",
+          right: "calc(12px + env(safe-area-inset-right, 0px))",
+          bottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+          left: "calc(12px + env(safe-area-inset-left, 0px))",
+        }}
+        mobileOffset={{
+          top: "calc(12px + env(safe-area-inset-top, 0px))",
+          right: "calc(12px + env(safe-area-inset-right, 0px))",
+          bottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+          left: "calc(12px + env(safe-area-inset-left, 0px))",
+        }}
         closeButton
         swipeDirections={["left", "right"]}
         toastOptions={{ className: "depth-toast" }}

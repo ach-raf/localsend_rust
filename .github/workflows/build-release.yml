@@ -299,21 +299,36 @@ jobs:
       - name: Generate release notes from new commits
         id: changelog
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          # Default branch HEAD before this push (the parent of the pushed
-          # commit) is the natural start of the range. Fall back to a small
-          # window if it isn't available (e.g. very first run).
-          RANGE="${{ github.event.before }}..${{ github.event.after }}"
-          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ] || \
-             ! git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+          # Range = everything since the most recent PUBLISHED release, so
+          # notes stay continuous even if a release was deleted and rebuilt
+          # (or several pushes were cancelled by the concurrency group).
+          # Releases, not git tags, are the source of truth: a deleted
+          # release's leftover tag is ignored, so its changes roll forward
+          # into the next one.
+          PREV_TAG=$(gh release list --limit 20 --exclude-drafts \
+            --json tagName \
+            --jq "[.[] | select(.tagName != \"${NEW_TAG}\")][0].tagName" 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ] && git rev-parse -q --verify "refs/tags/${PREV_TAG}^{commit}" >/dev/null; then
+            RANGE="${PREV_TAG}..HEAD"
+            echo "Changes since previous release ${PREV_TAG}" >> "$GITHUB_STEP_SUMMARY"
+          else
             RANGE="HEAD~10..HEAD"
-            echo "No usable 'before' sha; falling back to $RANGE" >> "$GITHUB_STEP_SUMMARY"
+            echo "No previous release tag found; falling back to $RANGE" >> "$GITHUB_STEP_SUMMARY"
           fi
           {
             echo "## What changed"
             echo ""
-            # Pretty list of the commit messages pushed in this run.
+            # Commit subjects since the previous release.
             git log "${RANGE}" --pretty=format:"- %s" --no-merges 2>/dev/null || echo "- (no commit log available)"
+            if [ -n "$PREV_TAG" ]; then
+              echo ""
+              echo ""
+              echo "**Full diff:** [\`${PREV_TAG}...${NEW_TAG}\`](https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${GITHUB_SHA::7})"
+            fi
             echo ""
             echo ""
             echo "## Downloads"

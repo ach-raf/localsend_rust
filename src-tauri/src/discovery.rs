@@ -193,6 +193,25 @@ pub fn start(app: AppHandle, device_id: String, alias: String, port: u16) {
         .ok();
 }
 
+/// Current peer list, sorted exactly as `peers-update` publishes it. Lets the
+/// UI fetch state on (re)mount instead of waiting for the next change event.
+pub fn current_peers() -> Vec<Peer> {
+    let reg = lock(&REGISTRY);
+    let mut list: Vec<Peer> = reg.peers.values().map(|e| e.peer.clone()).collect();
+    sort_peers(&mut list);
+    list
+}
+
+fn sort_peers(list: &mut [Peer]) {
+    // Stable order: HashMap iteration order is random and made the list jump.
+    list.sort_by(|a, b| {
+        a.alias
+            .to_lowercase()
+            .cmp(&b.alias.to_lowercase())
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
 /// Manual refresh: re-query mDNS, then probe and rescan immediately. Also
 /// re-emits the current list so a UI that mounted late is brought up to date.
 pub fn refresh_discovery() -> Result<(), String> {
@@ -293,13 +312,7 @@ fn send_maint(cmd: MaintCommand) {
 fn emit_peers(force: bool) {
     let mut reg = lock(&REGISTRY);
     let mut list: Vec<Peer> = reg.peers.values().map(|e| e.peer.clone()).collect();
-    // Stable order: HashMap iteration order is random and made the list jump.
-    list.sort_by(|a, b| {
-        a.alias
-            .to_lowercase()
-            .cmp(&b.alias.to_lowercase())
-            .then_with(|| a.id.cmp(&b.id))
-    });
+    sort_peers(&mut list);
     if !force && reg.last_emitted.as_ref() == Some(&list) {
         return;
     }
