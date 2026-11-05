@@ -22,3 +22,8 @@
 
 # The notification plugin uses Jackson/reflection for its Android command models.
 -keep class app.tauri.notification.** { *; }
+
+# JS bridge used by src/lib/receivedFiles.ts to open files with the native Android app picker.
+-keepclassmembers class com.user.localshare.MainActivity$NativeBridge {
+    @android.webkit.JavascriptInterface <methods>;
+}
