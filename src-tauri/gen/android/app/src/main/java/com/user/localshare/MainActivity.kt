@@ -28,25 +28,70 @@ class MainActivity : TauriActivity() {
     }
 
     /**
-     * Opens a received file with a plain ACTION_VIEW so Android shows its own
-     * "Open with" dialog / the user's default app, instead of the plugin's
-     * Intent.createChooser sheet. Returns "" on success, else an error message.
+     * Opens a received file the way other file apps do: plain ACTION_VIEW with
+     * a read grant and a reliable MIME type, so Android shows its own "Open
+     * with" dialog or the user's default app. Returns "" on success, else an
+     * error message for the UI.
      */
     inner class NativeBridge {
+        private fun isGeneric(m: String?) =
+            m == null || m == "*/*" || m == "application/octet-stream"
+
+        private fun resolveMime(uri: Uri, name: String?): String {
+            var mime = contentResolver.getType(uri)
+            if (isGeneric(mime)) {
+                val ext = name?.substringAfterLast('.', "")?.lowercase().orEmpty()
+                if (ext.isNotEmpty()) {
+                    android.webkit.MimeTypeMap.getSingleton()
+                        .getMimeTypeFromExtension(ext)?.let { mime = it }
+                }
+            }
+            return mime ?: "*/*"
+        }
+
+        private fun viewIntent(uri: Uri, mime: String) =
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                clipData = android.content.ClipData.newRawUri("", uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
         @JavascriptInterface
         fun openFile(uriString: String): String {
             return try {
                 val uri = Uri.parse(uriString)
-                val mime = contentResolver.getType(uri) ?: "*/*"
-                val view = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, mime)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val name = contentResolver.query(
+                    uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
+                )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                val mime = resolveMime(uri, name)
+
+                // Special case: installing APKs needs the "install unknown apps"
+                // permission for this app, otherwise the installer does nothing.
+                if (mime == "application/vnd.android.package-archive" &&
+                    !packageManager.canRequestPackageInstalls()
+                ) {
+                    startActivity(
+                        Intent(
+                            android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:$packageName")
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                    return "Allow \"Install unknown apps\" for Local Share, then tap Open File again"
                 }
+
                 try {
-                    startActivity(view)
+                    startActivity(viewIntent(uri, mime))
                 } catch (e: ActivityNotFoundException) {
-                    return "No app installed that can open this file ($mime)"
+                    // Nothing handles this exact type: let the user pick any app.
+                    try {
+                        startActivity(
+                            Intent.createChooser(viewIntent(uri, "*/*"), "Open with")
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    } catch (e2: ActivityNotFoundException) {
+                        return "No app installed can open this file ($mime)"
+                    }
                 }
                 ""
             } catch (e: Exception) {
