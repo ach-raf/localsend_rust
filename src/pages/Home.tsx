@@ -23,6 +23,7 @@ import {
   IconRefresh,
   IconX,
   IconClipboard,
+  IconChevronRight,
 } from "@tabler/icons-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -33,10 +34,18 @@ import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { showOpenFilePicker } from "tauri-plugin-android-fs-api";
 import ShareSheet from "../components/ShareSheet";
 import TextMessageModal from "../components/TextMessageModal";
+import StatusStrip from "../components/StatusStrip";
 import FileTransferConfirmModal from "../components/FileTransferConfirmModal";
 import { usePullToRefresh } from "../hooks/usePullToRefresh";
 import { useIncomingShareQueue } from "../hooks/useIncomingShareQueue";
 import { sendFilePathsToPeer } from "../lib/fileTransfer";
+import {
+  enqueueRequest,
+  formatFileSize,
+  removeRequest,
+  type IncomingMessage,
+  type IncomingRequest,
+} from "../lib/incomingRequests";
 import { detectAndroid } from "../lib/platform";
 import {
   createIncomingShareProgress,
@@ -58,29 +67,28 @@ interface Peer {
   hostname: string;
 }
 
-interface ReceivedMessage {
-  senderAlias: string;
-  content: string;
-}
-
 interface FileTransferRequest {
   transfer_id: string;
   file_name: string;
   file_size?: number;
+  sender_ip: string;
 }
 
 interface BatchTransferRequest {
   session_id: string;
   sender_alias: string;
+  sender_ip: string;
   files: { name: string; size: number }[];
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+/** "Naruto-Luffy" -> "NL", "Pixel 8" -> "P8", "Zed" -> "ZE". */
+function monogram(alias: string): string {
+  const words = alias.split(/[\s\-_]+/).filter(Boolean);
+  const letters =
+    words.length > 1
+      ? words[0][0] + words[1][0]
+      : (words[0] ?? "?").slice(0, 2);
+  return letters.toUpperCase();
 }
 
 export default function Home() {
@@ -90,14 +98,12 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [receivedMessage, setReceivedMessage] =
-    useState<ReceivedMessage | null>(null);
-  const [messageModalOpened, setMessageModalOpened] = useState(false);
-  const [fileTransferRequest, setFileTransferRequest] =
-    useState<FileTransferRequest | null>(null);
-  const [batchTransferRequest, setBatchTransferRequest] =
-    useState<BatchTransferRequest | null>(null);
-  const [transferModalOpened, setTransferModalOpened] = useState(false);
+  // Prompts and messages queue up instead of overwriting each other.
+  const [messages, setMessages] = useState<IncomingMessage[]>([]);
+  const [requests, setRequests] = useState<IncomingRequest[]>([]);
+  const requestsRef = useRef<IncomingRequest[]>([]);
+  const currentRequest = requests[0] ?? null;
+  const currentMessage = messages[0] ?? null;
   const [dragTargetPeerKey, setDragTargetPeerKey] = useState<string | null>(
     null,
   );
@@ -127,6 +133,10 @@ export default function Home() {
   useEffect(() => {
     peersRef.current = peers;
   }, [peers]);
+
+  useEffect(() => {
+    requestsRef.current = requests;
+  }, [requests]);
 
   useEffect(() => {
     const applyPeers = (incoming: Peer[]) => {
@@ -248,76 +258,103 @@ export default function Home() {
       }
     );
 
-    const unlistenMessage = listen("message-received", (event: any) => {
-      setReceivedMessage({
-        senderAlias: event.payload.sender_alias,
-        content: event.payload.content,
-      });
-      setMessageModalOpened(true);
+    const unlistenMessage = listen<{
+      sender_alias: string;
+      sender_ip: string;
+      content: string;
+    }>("message-received", (event) => {
+      setMessages((queue) => [
+        ...queue,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          senderAlias: event.payload.sender_alias,
+          senderIp: event.payload.sender_ip,
+          content: event.payload.content,
+        },
+      ]);
     });
 
-    // Listen for file transfer requests
     const unlistenFileTransferRequest = listen<FileTransferRequest>(
       "file-transfer-request",
       (event) => {
-        console.log("File transfer request:", event.payload);
-        setBatchTransferRequest(null);
-        setFileTransferRequest(event.payload);
-        setTransferModalOpened(true);
-      }
+        const r = event.payload;
+        setRequests((queue) =>
+          enqueueRequest(queue, {
+            id: r.transfer_id,
+            kind: "file",
+            senderAlias: null,
+            senderIp: r.sender_ip,
+            files: [{ name: r.file_name, size: r.file_size }],
+          }),
+        );
+      },
     );
 
-    // Listen for batch transfer requests
     const unlistenBatchTransferRequest = listen<BatchTransferRequest>(
       "batch-transfer-request",
       (event) => {
-        console.log("Batch transfer request:", event.payload);
-        setFileTransferRequest(null);
-        setBatchTransferRequest(event.payload);
-        setTransferModalOpened(true);
-      }
+        const r = event.payload;
+        setRequests((queue) =>
+          enqueueRequest(queue, {
+            id: r.session_id,
+            kind: "batch",
+            senderAlias: r.sender_alias,
+            senderIp: r.sender_ip,
+            files: r.files,
+          }),
+        );
+      },
     );
 
-    // Listen for file transfer rejection
-    const unlistenFileTransferRejected = listen(
-      "file-transfer-rejected",
+    // The sender gave up (timeout / disconnect): close that prompt only.
+    const unlistenRequestCancelled = listen<{ id: string }>(
+      "transfer-request-cancelled",
       (event) => {
-        notifications.show({
-          title: "Transfer Rejected",
-          message: `File transfer rejected: ${event.payload}`,
-          color: "yellow",
-        });
-      }
-    );
-
-    // Listen for file transfer timeout
-    const unlistenFileTransferTimeout = listen<string>(
-      "file-transfer-timeout",
-      (event) => {
-        // Try to update existing progress notification if it exists
-        notifications.update({
-          id: event.payload,
-          title: "Transfer Timeout",
-          message: `File transfer timed out: ${event.payload}`,
-          color: "orange",
-          autoClose: 5000,
-          loading: false,
-        });
-
-        // Close the modal if it's still open for this transfer
-        if (fileTransferRequest?.transfer_id === event.payload) {
-          setTransferModalOpened(false);
-          setFileTransferRequest(null);
+        const wasShowing = requestsRef.current.some(
+          (r) => r.id === event.payload.id,
+        );
+        setRequests((queue) => removeRequest(queue, event.payload.id));
+        if (wasShowing) {
+          notifications.show({
+            title: "Request expired",
+            message: "The sender cancelled or didn't wait for an answer.",
+            color: "yellow",
+            autoClose: 4000,
+          });
         }
-      }
+      },
     );
 
-    // Listen for file transfer errors
-    const unlistenFileTransferError = listen("file-receive-error", (event) => {
-      notifications.show({
-        title: "Transfer Error",
-        message: `Failed to save file: ${event.payload}`,
+    const unlistenRequestAnswered = listen<{ id: string }>(
+      "transfer-request-answered",
+      (event) => setRequests((queue) => removeRequest(queue, event.payload.id)),
+    );
+
+    const unlistenFileTransferError = listen<{
+      transfer_id: string;
+      file_name: string;
+      reason?: string;
+    }>("file-receive-error", (event) => {
+      notifications.update({
+        id: event.payload.transfer_id,
+        title: "Transfer failed",
+        message: `${event.payload.file_name} wasn't saved${
+          event.payload.reason ? ` — ${event.payload.reason}` : ""
+        }`,
         color: "red",
+        loading: false,
+        autoClose: 8000,
+      });
+    });
+
+    // The receiving server couldn't start (e.g. port taken): say so loudly.
+    const unlistenServerError = listen<string>("server-error", (event) => {
+      notifications.show({
+        id: "server-error",
+        title: "Can't receive files",
+        message: event.payload,
+        color: "red",
+        autoClose: false,
       });
     });
 
@@ -409,8 +446,9 @@ export default function Home() {
       unlistenMessage.then((f) => f());
       unlistenFileTransferRequest.then((f) => f());
       unlistenBatchTransferRequest.then((f) => f());
-      unlistenFileTransferRejected.then((f) => f());
-      unlistenFileTransferTimeout.then((f) => f());
+      unlistenRequestCancelled.then((f) => f());
+      unlistenRequestAnswered.then((f) => f());
+      unlistenServerError.then((f) => f());
       unlistenFileTransferError.then((f) => f());
       unlistenMediaScan.then((f) => f());
       unlistenFileDrop.then((f) => f());
@@ -657,58 +695,31 @@ export default function Home() {
     spinnerRef: ptrSpinnerRef,
   });
 
-  const handleAcceptTransfer = async () => {
-    if (!fileTransferRequest && !batchTransferRequest) return;
+  const answerRequest = async (accepted: boolean) => {
+    const request = requestsRef.current[0];
+    if (!request) return;
 
     try {
-      const transferId = fileTransferRequest
-        ? fileTransferRequest.transfer_id
-        : batchTransferRequest!.session_id;
-
       await invoke("respond_to_file_transfer", {
-        transferId: transferId,
-        accepted: true,
+        transferId: request.id,
+        accepted,
       });
-      setTransferModalOpened(false);
-      setFileTransferRequest(null);
-      setBatchTransferRequest(null);
     } catch (e) {
+      // Usually "not found": the sender already gave up. Nothing to answer.
+      console.warn("Transfer response failed:", e);
       notifications.show({
-        title: "Error",
-        message: `Failed to accept transfer: ${e}`,
-        color: "red",
-      });
-    }
-  };
-
-  const handleRejectTransfer = async () => {
-    if (!fileTransferRequest && !batchTransferRequest) return;
-
-    try {
-      const transferId = fileTransferRequest
-        ? fileTransferRequest.transfer_id
-        : batchTransferRequest!.session_id;
-
-      await invoke("respond_to_file_transfer", {
-        transferId: transferId,
-        accepted: false,
-      });
-      setTransferModalOpened(false);
-      setFileTransferRequest(null);
-      setBatchTransferRequest(null);
-      notifications.show({
-        title: "Transfer Rejected",
-        message: "File transfer rejected",
+        title: "Too late",
+        message: "That request is no longer active.",
         color: "yellow",
+        autoClose: 3000,
       });
-    } catch (e) {
-      notifications.show({
-        title: "Error",
-        message: `Failed to reject transfer: ${e}`,
-        color: "red",
-      });
+    } finally {
+      setRequests((queue) => removeRequest(queue, request.id));
     }
   };
+
+  const handleAcceptTransfer = () => answerRequest(true);
+  const handleRejectTransfer = () => answerRequest(false);
 
   return (
     <>
@@ -760,6 +771,7 @@ export default function Home() {
         pt={{ base: "md", sm: 0 }}
         className="animate-[fadeIn_250ms_ease-out]"
       >
+        <StatusStrip />
         <Grid gutter={{ base: "xs", sm: "md", lg: "lg" }}>
           {/* Mobile: Single column that switches content. Desktop: Side-by-side */}
           <Grid.Col
@@ -811,81 +823,50 @@ export default function Home() {
                 </div>
               ) : (
                 <Stack gap="sm">
-                  {peers.map((peer) => (
-                    <div
-                      key={peer.ip + peer.port}
-                      data-peer-drop-key={`${peer.ip}:${peer.port}`}
-                      className={`peer-card p-4 ${
-                        selectedPeer?.ip === peer.ip ? "selected" : ""
-                      } ${
-                        dragTargetPeerKey === `${peer.ip}:${peer.port}`
-                          ? "peer-drop-target"
-                          : ""
-                      }`}
-                      onClick={() => setSelectedPeer(peer)}
-                    >
-                      <Group
-                        gap="md"
-                        wrap="nowrap"
-                        align="flex-start"
-                        className="responsive-peer-group"
+                  {peers.map((peer) => {
+                    const key = `${peer.ip}:${peer.port}`;
+                    return (
+                      <div
+                        key={key}
+                        data-peer-drop-key={key}
+                        role="button"
+                        tabIndex={0}
+                        aria-pressed={selectedPeer?.ip === peer.ip}
+                        className={`peer-card ${
+                          selectedPeer?.ip === peer.ip ? "selected" : ""
+                        } ${dragTargetPeerKey === key ? "peer-drop-target" : ""}`}
+                        onClick={() => setSelectedPeer(peer)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedPeer(peer);
+                          }
+                        }}
                       >
-                        <div style={{ position: "relative", flexShrink: 0 }}>
-                          <ThemeIcon
-                            size={48}
-                            variant="light"
-                            color="phosphor"
-                            radius="md"
-                            className="responsive-peer-icon"
-                          >
-                            <IconDeviceDesktop size={24} />
-                          </ThemeIcon>
-                          <div
-                            className="absolute -top-1 -right-1 w-3 h-3 rounded-full"
-                            style={{
-                              zIndex: 10,
-                              background: "var(--accent-success)",
-                              boxShadow:
-                                "0 0 0 3px color-mix(in oklch, var(--accent-success) 22%, transparent), 0 0 8px color-mix(in oklch, var(--accent-success) 55%, transparent)",
-                            }}
-                          />
+                        <div className="peer-avatar" aria-hidden="true">
+                          <span>{monogram(peer.alias)}</span>
+                          <i className="peer-live" />
                         </div>
-                        <div
-                          style={{ flex: 1, minWidth: 0, overflow: "hidden" }}
-                        >
-                          <Text
-                            fw={600}
-                            className={`responsive-peer-name break-words leading-[1.3] ${
-                              selectedPeer?.ip === peer.ip
-                                ? "text-accent-primary-light"
-                                : "text-text-primary"
-                            }`}
-                          >
-                            {peer.alias}
-                          </Text>
-                          <Text
-                            size="xs"
-                            c="dimmed"
-                            className="responsive-peer-ip t-mono"
-                            style={{ marginTop: "0.25rem" }}
-                          >
+                        <div className="peer-meta">
+                          <div className="peer-name">{peer.alias}</div>
+                          <div className="peer-addr t-mono">
                             {peer.ip}
-                          </Text>
-                          {dragTargetPeerKey === `${peer.ip}:${peer.port}` && (
-                            <Text
-                              size="xs"
-                              fw={700}
-                              c="phosphor.4"
-                              mt={6}
-                              tt="uppercase"
-                            >
+                            <span>:{peer.port}</span>
+                          </div>
+                          {dragTargetPeerKey === key && (
+                            <div className="peer-drop-hint t-mono">
                               Drop to send
-                            </Text>
+                            </div>
                           )}
                         </div>
-                      </Group>
-                    </div>
-                  ))}
+                        <IconChevronRight
+                          size={18}
+                          className="peer-chevron"
+                          aria-hidden="true"
+                        />
+                      </div>
+                    );
+                  })}
                 </Stack>
               )}
             </Paper>
@@ -908,9 +889,7 @@ export default function Home() {
                   className="responsive-header-group"
                 >
                   <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-                    <Text size="sm" c="dimmed" tt="uppercase" fw={600} mb={4}>
-                      Send to
-                    </Text>
+                    <div className="panel-kicker t-mono">Send to</div>
                     <Title
                       order={3}
                       className="responsive-title text-text-primary break-words leading-[1.2]"
@@ -1128,31 +1107,31 @@ export default function Home() {
       </Container>
       )}
 
-      {receivedMessage && (
+      {currentMessage && (
         <TextMessageModal
-          opened={messageModalOpened}
-          onClose={() => setMessageModalOpened(false)}
-          senderAlias={receivedMessage.senderAlias}
-          content={receivedMessage.content}
+          key={currentMessage.id}
+          opened
+          onClose={() =>
+            setMessages((queue) => queue.filter((m) => m.id !== currentMessage.id))
+          }
+          senderAlias={currentMessage.senderAlias}
+          content={currentMessage.content}
+          waiting={messages.length - 1}
         />
       )}
 
-      {(fileTransferRequest || batchTransferRequest) && (
+      {currentRequest && (
         <FileTransferConfirmModal
-          opened={transferModalOpened}
-          onClose={() => setTransferModalOpened(false)}
+          key={currentRequest.id}
+          opened
+          onClose={() => undefined}
           onAccept={handleAcceptTransfer}
           onReject={handleRejectTransfer}
-          files={
-            fileTransferRequest
-              ? [
-                  {
-                    name: fileTransferRequest.file_name,
-                    size: fileTransferRequest.file_size,
-                  },
-                ]
-              : batchTransferRequest!.files
-          }
+          files={currentRequest.files}
+          senderAlias={currentRequest.senderAlias}
+          senderIp={currentRequest.senderIp}
+          waiting={requests.length - 1}
+          timeoutSeconds={60}
         />
       )}
     </>

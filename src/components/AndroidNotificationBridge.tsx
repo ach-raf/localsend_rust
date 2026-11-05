@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import {
   isPermissionGranted,
   onAction,
+  registerActionTypes,
   requestPermission,
   type Options,
 } from "@tauri-apps/plugin-notification";
+import { invoke } from "@tauri-apps/api/core";
 import { isAndroid } from "tauri-plugin-android-fs-api";
 import { notifications } from "../lib/notifications";
 import { openReceivedFile } from "../lib/receivedFiles";
@@ -30,6 +32,30 @@ export default function AndroidNotificationBridge() {
     void onAction((rawAction) => {
       const action = rawAction as unknown as NotificationAction;
       const extra = action.notification?.extra;
+
+      // Accept / Reject buttons on the "someone wants to send you files"
+      // notification. Tapping the body just opens the app, where the prompt
+      // is already waiting.
+      if (
+        extra?.kind === "incoming-request" &&
+        typeof extra.requestId === "string" &&
+        (action.actionId === "accept" || action.actionId === "reject")
+      ) {
+        void invoke("respond_to_file_transfer", {
+          transferId: extra.requestId,
+          accepted: action.actionId === "accept",
+        }).catch((error) => {
+          console.warn("Notification response failed:", error);
+          notifications.show({
+            title: "Too late",
+            message: "That request is no longer active.",
+            color: "yellow",
+            autoClose: 3000,
+          });
+        });
+        return;
+      }
+
       if (
         action.actionId !== "tap" ||
         extra?.kind !== "received-file" ||
@@ -51,6 +77,18 @@ export default function AndroidNotificationBridge() {
       else removeActionListener = () => listener.unregister();
     }).catch((error) => {
       console.error("Failed to listen for notification actions:", error);
+    });
+
+    void registerActionTypes([
+      {
+        id: "incoming-request",
+        actions: [
+          { id: "accept", title: "Accept", foreground: true },
+          { id: "reject", title: "Reject", foreground: true },
+        ],
+      },
+    ]).catch((error) => {
+      console.error("Failed to register notification actions:", error);
     });
 
     void (async () => {

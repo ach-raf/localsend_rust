@@ -8,6 +8,8 @@ interface TextMessageModalProps {
   onClose: () => void;
   senderAlias: string;
   content: string;
+  /** More messages queued behind this one. */
+  waiting?: number;
 }
 
 export default function TextMessageModal({
@@ -15,6 +17,7 @@ export default function TextMessageModal({
   onClose,
   senderAlias,
   content,
+  waiting = 0,
 }: TextMessageModalProps) {
   // Check if content is a URL (starts with http:// or https://)
   const isUrl =
@@ -109,7 +112,7 @@ export default function TextMessageModal({
           size="md"
           className="depth-button-secondary rmsg-action rmsg-close-text"
         >
-          Close
+          {waiting > 0 ? `Next (${waiting} more)` : "Close"}
         </Button>
       </footer>
     </Modal>

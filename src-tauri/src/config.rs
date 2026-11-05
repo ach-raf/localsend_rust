@@ -11,6 +11,43 @@ pub struct AppConfig {
     /// `default` so old settings files and frontend payloads without it load.
     #[serde(default)]
     pub device_id: String,
+    /// Master switch for incoming transfers/messages. When off the device is
+    /// still visible, but every inbound request is refused up front.
+    #[serde(default = "default_true")]
+    pub receiving_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+pub const MIN_PORT: u16 = 1024;
+pub const MAX_ALIAS_CHARS: usize = 32;
+
+impl AppConfig {
+    /// Normalises user-supplied settings and rejects the ones that would leave
+    /// the app unreachable or confusing to peers.
+    pub fn validated(mut self) -> Result<Self, String> {
+        self.alias = self
+            .alias
+            .chars()
+            .filter(|c| !c.is_control())
+            .collect::<String>()
+            .trim()
+            .to_string();
+        if self.alias.is_empty() {
+            return Err("Device name can't be empty".into());
+        }
+        if self.alias.chars().count() > MAX_ALIAS_CHARS {
+            return Err(format!(
+                "Device name must be {MAX_ALIAS_CHARS} characters or fewer"
+            ));
+        }
+        if self.port < MIN_PORT {
+            return Err(format!("Port must be between {MIN_PORT} and 65535"));
+        }
+        Ok(self)
+    }
 }
 
 pub fn generate_anime_name() -> String {
@@ -466,6 +503,7 @@ impl Default for AppConfig {
             alias: generate_anime_name(),
             port: 3030,
             device_id: uuid::Uuid::new_v4().to_string(),
+            receiving_enabled: true,
         }
     }
 }
@@ -484,7 +522,18 @@ pub fn load_config(app: &AppHandle) -> AppConfig {
         let config_path = config_dir.join("settings.json");
         if config_path.exists() {
             if let Ok(content) = fs::read_to_string(&config_path) {
-                if let Ok(mut config) = serde_json::from_str::<AppConfig>(&content) {
+                let parsed = serde_json::from_str::<AppConfig>(&content);
+                if parsed.is_err() {
+                    // Don't silently throw away a file we merely failed to
+                    // parse: keep it next to the fresh defaults.
+                    let backup = config_dir.join("settings.json.bak");
+                    eprintln!("settings.json is unreadable; backing up to {:?}", backup);
+                    let _ = fs::copy(&config_path, backup);
+                }
+                if let Ok(mut config) = parsed {
+                    if config.port < MIN_PORT {
+                        config.port = 3030;
+                    }
                     // If the name looks like it came from the old generator, regenerate it
                     let mut dirty = false;
                     if is_old_style_name(&config.alias) {
@@ -520,6 +569,9 @@ pub fn save_config(app: &AppHandle, config: &AppConfig) -> Result<(), String> {
 
     let config_path = config_dir.join("settings.json");
     let content = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    fs::write(config_path, content).map_err(|e| e.to_string())?;
+    // Write-then-rename so a crash mid-save can't leave a truncated file.
+    let tmp_path = config_dir.join("settings.json.tmp");
+    fs::write(&tmp_path, content).map_err(|e| e.to_string())?;
+    fs::rename(&tmp_path, &config_path).map_err(|e| e.to_string())?;
     Ok(())
 }
