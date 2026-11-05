@@ -1,5 +1,6 @@
 mod config;
 mod discovery;
+mod guard;
 mod server;
 mod transfer;
 
@@ -8,23 +9,41 @@ use crate::discovery::refresh_discovery;
 use crate::server::start_server;
 use crate::transfer::{send_file, send_file_bytes, send_text};
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc, Mutex, MutexGuard,
 };
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
+
+/// An approved batch. Bound to the device that asked, capped to what the user
+/// saw in the prompt, and expiring — so a leaked session id is worthless.
+pub struct Session {
+    pub peer_ip: IpAddr,
+    pub files_left: usize,
+    pub bytes_left: u64,
+    pub expires: Instant,
+}
 
 #[derive(Clone)]
 pub struct PendingTransfers {
     pub transfers: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>,
-    pub authorized_sessions: Arc<Mutex<HashMap<String, bool>>>,
+    pub authorized_sessions: Arc<Mutex<HashMap<String, Session>>>,
+}
+
+/// Locks a std mutex, recovering the data if a panicking thread poisoned it —
+/// one crashed handler must not take every later request down with it.
+pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 struct AppState {
     config: Mutex<AppConfig>,
     pending_transfers: PendingTransfers,
     app_foreground: Arc<AtomicBool>,
+    receiving: Arc<AtomicBool>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -35,7 +54,7 @@ fn greet(name: &str) -> String {
 
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> AppConfig {
-    state.config.lock().unwrap().clone()
+    lock(&state.config).clone()
 }
 
 #[tauri::command]
@@ -45,17 +64,20 @@ fn save_settings(
     mut new_config: AppConfig,
 ) -> Result<(), String> {
     let (old_alias, device_id) = {
-        let config = state.config.lock().unwrap();
+        let config = lock(&state.config);
         (config.alias.clone(), config.device_id.clone())
     };
 
     // The identity is owned by the backend; the UI payload never carries it.
     new_config.device_id = device_id;
+    let new_config = new_config.validated()?;
 
-    let mut config = state.config.lock().unwrap();
-    *config = new_config.clone();
+    // Persist first: if the disk write fails the running config is untouched.
     save_config(&app, &new_config)?;
-    drop(config); // Release lock before doing heavy operations
+    *lock(&state.config) = new_config.clone();
+    state
+        .receiving
+        .store(new_config.receiving_enabled, Ordering::Relaxed);
 
     if old_alias != new_config.alias {
         eprintln!(
@@ -150,7 +172,7 @@ async fn request_batch_transfer_to_peer(
     files: Vec<(String, u64)>,
     state: State<'_, AppState>,
 ) -> Result<(bool, String), String> {
-    let sender_alias = state.config.lock().unwrap().alias.clone();
+    let sender_alias = lock(&state.config).alias.clone();
     crate::transfer::request_batch_transfer(peer_ip, peer_port, sender_alias, files).await
 }
 
@@ -161,7 +183,7 @@ async fn send_text_to_peer(
     text: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let sender_alias = state.config.lock().unwrap().alias.clone();
+    let sender_alias = lock(&state.config).alias.clone();
     send_text(peer_ip, peer_port, text, sender_alias).await
 }
 
@@ -217,20 +239,23 @@ async fn scan_media_file(app: AppHandle, path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn respond_to_file_transfer(
+    app: AppHandle,
     state: State<'_, AppState>,
     transfer_id: String,
     accepted: bool,
 ) -> Result<(), String> {
-    let mut transfers = state
-        .pending_transfers
-        .transfers
-        .lock()
-        .map_err(|e| format!("Failed to lock transfers: {}", e))?;
+    let mut transfers = lock(&state.pending_transfers.transfers);
 
     if let Some(sender) = transfers.remove(&transfer_id) {
         sender
             .send(accepted)
             .map_err(|_| "Failed to send response".to_string())?;
+        // Lets the UI drop the prompt even when the answer came from a
+        // notification button rather than the modal.
+        let _ = app.emit(
+            "transfer-request-answered",
+            serde_json::json!({ "id": transfer_id }),
+        );
         Ok(())
     } else {
         Err(format!("Transfer {} not found", transfer_id))
@@ -415,11 +440,13 @@ pub fn run() {
                 authorized_sessions: Arc::new(Mutex::new(HashMap::new())),
             };
             let app_foreground = Arc::new(AtomicBool::new(true));
+            let receiving = Arc::new(AtomicBool::new(config.receiving_enabled));
 
             app.manage(AppState {
                 config: Mutex::new(config),
                 pending_transfers: pending_transfers.clone(),
                 app_foreground: app_foreground.clone(),
+                receiving: receiving.clone(),
             });
 
             #[cfg(target_os = "android")]
@@ -436,6 +463,16 @@ pub fn run() {
                 if let Err(error) = app.notification().create_channel(channel) {
                     eprintln!("Failed to create received-file notification channel: {error}");
                 }
+
+                // Heads-up channel: someone is waiting for an answer right now.
+                let requests = Channel::builder("incoming-requests", "Incoming requests")
+                    .description("Asks whether to accept files from nearby devices")
+                    .importance(Importance::High)
+                    .visibility(Visibility::Private)
+                    .build();
+                if let Err(error) = app.notification().create_channel(requests) {
+                    eprintln!("Failed to create incoming-request notification channel: {error}");
+                }
             }
 
             // Start discovery (mDNS + HTTP verification + subnet scan). It owns
@@ -447,7 +484,7 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 eprintln!("Starting HTTP server...");
-                start_server(handle, port, pending_transfers, app_foreground).await;
+                start_server(handle, port, pending_transfers, app_foreground, receiving).await;
             });
 
             Ok(())

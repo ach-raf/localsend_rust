@@ -2,6 +2,7 @@ use futures::stream::StreamExt;
 use serde::Serialize;
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
@@ -37,6 +38,39 @@ fn get_mime_type_for_file(file_name: &str, file_data: Option<&[u8]>) -> String {
     "application/octet-stream".to_string()
 }
 
+/// No byte moved for this long -> the other device is gone; give up instead of
+/// hanging forever. (A fixed total timeout would instead kill big transfers.)
+const STALL_LIMIT: Duration = Duration::from_secs(90);
+
+fn build_client(total_timeout: Option<Duration>) -> Result<Client, String> {
+    let mut builder = Client::builder().connect_timeout(Duration::from_secs(10));
+    if let Some(t) = total_timeout {
+        builder = builder.timeout(t);
+    }
+    builder
+        .build()
+        .map_err(|e| format!("Failed to create client: {}", e))
+}
+
+/// Turns an HTTP failure into something a person can act on, preferring the
+/// receiver's own explanation.
+async fn describe_failure(res: tauri_plugin_http::reqwest::Response) -> String {
+    let status = res.status();
+    let body = res.text().await.unwrap_or_default();
+    let body = body.trim();
+    if !body.is_empty() && body.len() < 200 {
+        return body.to_string();
+    }
+    match status.as_u16() {
+        403 => "The other device declined or isn't accepting transfers".into(),
+        408 => "The other device didn't answer in time".into(),
+        413 => "File is larger than what was approved".into(),
+        429 => "The other device is busy - try again in a moment".into(),
+        507 => "The other device is out of storage space".into(),
+        _ => format!("Upload failed with status: {}", status),
+    }
+}
+
 #[derive(Serialize, Clone)]
 struct ProgressPayload {
     transfer_id: String,
@@ -57,10 +91,7 @@ pub async fn send_file(
         file_path, peer_ip, peer_port, session_id
     );
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(300)) // 5 minute timeout
-        .build()
-        .map_err(|e| format!("Failed to create client: {}", e))?;
+    let client = build_client(None)?;
 
     let url = format!("http://{}:{}/upload", peer_ip, peer_port);
     eprintln!("Upload URL: {}", url);
@@ -162,12 +193,16 @@ pub async fn send_file(
     // Progress tracking
     let uploaded = Arc::new(Mutex::new(0u64));
     let last_emit = Arc::new(Mutex::new(Instant::now()));
+    let started = Instant::now();
+    let last_seen = Arc::new(AtomicU64::new(0));
+    let last_seen_stream = last_seen.clone();
     let uploaded_clone = uploaded.clone();
     let app_handle = app.clone();
     let transfer_id = progress_id.unwrap_or_else(|| file_name.clone());
 
     let progress_stream = stream.map(move |chunk| {
         if let Ok(ref bytes) = chunk {
+            last_seen_stream.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
             let len = bytes.len() as u64;
             let mut uploaded_val = uploaded_clone.lock().unwrap();
             *uploaded_val += len;
@@ -208,21 +243,32 @@ pub async fn send_file(
     form = form.text("size", file_size.to_string()).part("file", part);
 
     eprintln!("Sending multipart request...");
-    let res = client
-        .post(&url)
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|e| {
+    let send = client.post(&url).multipart(form).send();
+    let watchdog = async {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            let idle_ms = (started.elapsed().as_millis() as u64)
+                .saturating_sub(last_seen.load(Ordering::Relaxed));
+            if idle_ms > STALL_LIMIT.as_millis() as u64 {
+                break;
+            }
+        }
+    };
+    let res = tokio::select! {
+        r = send => r.map_err(|e| {
             eprintln!("Request failed: {}", e);
             format!("Request failed: {}", e)
-        })?;
+        })?,
+        _ = watchdog => {
+            return Err("Transfer stalled - the other device stopped responding".to_string());
+        }
+    };
 
     eprintln!("Response status: {}", res.status());
     if res.status().is_success() {
         Ok(())
     } else {
-        Err(format!("Upload failed with status: {}", res.status()))
+        Err(describe_failure(res).await)
     }
 }
 
@@ -242,15 +288,14 @@ pub async fn send_file_bytes(
         session_id
     );
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(300)) // 5 minute timeout
-        .build()
-        .map_err(|e| format!("Failed to create client: {}", e))?;
+    // Scale the ceiling with the payload: at least 2 minutes, plus time for a
+    // slow (~1 MB/s) link.
+    let file_size = file_data.len() as u64;
+    let client = build_client(Some(Duration::from_secs(120 + file_size / (1024 * 1024))))?;
 
     let url = format!("http://{}:{}/upload", peer_ip, peer_port);
     eprintln!("Upload URL: {}", url);
 
-    let file_size = file_data.len() as u64;
 
     // Determine MIME type based on filename and content
     let mime_type = get_mime_type_for_file(&file_name, Some(&file_data));
@@ -283,7 +328,7 @@ pub async fn send_file_bytes(
     if res.status().is_success() {
         Ok(())
     } else {
-        Err(format!("Upload failed with status: {}", res.status()))
+        Err(describe_failure(res).await)
     }
 }
 
@@ -293,7 +338,8 @@ pub async fn request_batch_transfer(
     sender_alias: String,
     files: Vec<(String, u64)>,
 ) -> Result<(bool, String), String> {
-    let client = Client::new();
+    // The receiver waits up to 60s for a person to answer.
+    let client = build_client(Some(Duration::from_secs(90)))?;
     let url = format!("http://{}:{}/request", peer_ip, peer_port);
     let session_id = uuid::Uuid::new_v4().to_string();
 
@@ -323,9 +369,12 @@ pub async fn request_batch_transfer(
     if res.status().is_success() {
         let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
         let accepted = body["accepted"].as_bool().unwrap_or(false);
+        if !accepted && body["reason"].as_str() == Some("timeout") {
+            return Err("The other device didn't answer in time".to_string());
+        }
         Ok((accepted, session_id))
     } else {
-        Err(format!("Request failed with status: {}", res.status()))
+        Err(describe_failure(res).await)
     }
 }
 
@@ -335,7 +384,7 @@ pub async fn send_text(
     text: String,
     sender_alias: String,
 ) -> Result<(), String> {
-    let client = Client::new();
+    let client = build_client(Some(Duration::from_secs(15)))?;
     let url = format!("http://{}:{}/message", peer_ip, peer_port);
 
     let payload = json!({
@@ -353,6 +402,6 @@ pub async fn send_text(
     if res.status().is_success() {
         Ok(())
     } else {
-        Err(format!("Message failed with status: {}", res.status()))
+        Err(describe_failure(res).await)
     }
 }
