@@ -5,19 +5,25 @@ import {
   TextInput,
   NumberInput,
   Button,
+  Switch,
   Text,
 } from "@mantine/core";
 import { notifications } from "../lib/notifications";
 import { invoke } from "@tauri-apps/api/core";
-import { IconDice } from "@tabler/icons-react";
+import { IconDice, IconShieldCheck } from "@tabler/icons-react";
 
 interface AppConfig {
   alias: string;
   port: number;
+  receiving_enabled: boolean;
 }
 
 export default function Settings() {
-  const [config, setConfig] = useState<AppConfig>({ alias: "", port: 3030 });
+  const [config, setConfig] = useState<AppConfig>({
+    alias: "",
+    port: 3030,
+    receiving_enabled: true,
+  });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -57,7 +63,15 @@ export default function Settings() {
     }
   };
 
+  const aliasError =
+    config.alias.trim().length === 0
+      ? "Give this device a name"
+      : config.alias.trim().length > 32
+        ? "32 characters or fewer"
+        : null;
+
   const handleSave = async () => {
+    if (aliasError) return;
     setLoading(true);
     try {
       await invoke("save_settings", { newConfig: config });
@@ -117,6 +131,8 @@ export default function Settings() {
                 }
                 size="md"
                 placeholder="Your device name"
+                maxLength={40}
+                error={aliasError}
               />
               <Button
                 variant="light"
@@ -128,6 +144,44 @@ export default function Settings() {
                 Generate
               </Button>
             </div>
+          </div>
+
+          <div className="settings-divider" />
+
+          {/* Privacy */}
+          <div className="settings-group-label">Privacy</div>
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <div className="settings-field-name">Receive from others</div>
+              <div className="settings-field-desc">
+                {config.receiving_enabled
+                  ? "Every file still needs your OK"
+                  : "Paused — you stay visible but nothing can be sent to you"}
+              </div>
+            </div>
+            <div className="settings-row-control">
+              <Switch
+                size="lg"
+                checked={config.receiving_enabled}
+                onChange={(event) =>
+                  setConfig({
+                    ...config,
+                    receiving_enabled: event.currentTarget.checked,
+                  })
+                }
+                aria-label="Receive from others"
+              />
+            </div>
+          </div>
+
+          <div className="security-note" role="note">
+            <IconShieldCheck size={18} aria-hidden="true" />
+            <ul>
+              <li>Nothing is saved until you press Accept.</li>
+              <li>Only devices on your local network can reach this app.</li>
+              <li>Approvals are tied to the sender and expire on their own.</li>
+              <li>Files never open automatically, and risky types are flagged.</li>
+            </ul>
           </div>
 
           <div className="settings-divider" />
@@ -160,6 +214,7 @@ export default function Settings() {
           <Button
             loading={loading}
             onClick={handleSave}
+            disabled={!!aliasError}
             className="depth-button-primary settings-save"
           >
             Save settings
