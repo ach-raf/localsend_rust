@@ -129,15 +129,9 @@ export default function Home() {
   }, [peers]);
 
   useEffect(() => {
-    // Trigger initial discovery on mount
-    invoke("refresh_peers").catch((e) => {
-      console.error("Failed to trigger initial discovery:", e);
-    });
-
-    // Listen for peer updates
-    const unlistenPeers = listen<Peer[]>("peers-update", (event) => {
+    const applyPeers = (incoming: Peer[]) => {
       // Deduplicate peers by IP address (in case multiple mDNS entries exist)
-      const uniquePeers = event.payload.reduce((acc, peer) => {
+      const uniquePeers = incoming.reduce((acc, peer) => {
         // Use IP as the unique key - if multiple entries have same IP, keep the most recent
         const existingIndex = acc.findIndex((p) => p.ip === peer.ip);
         if (existingIndex === -1) {
@@ -164,7 +158,20 @@ export default function Home() {
       ) {
         setSelectedPeer(null);
       }
-    });
+    };
+
+    // Subscribe FIRST, then pull a snapshot. The backend only emits when the
+    // list changes, and this page is unmounted while on Settings, so without the
+    // snapshot a remount shows an empty list until something changes. (Calling
+    // refresh before `listen` resolved also lost its re-emit.)
+    const unlistenPeers = listen<Peer[]>("peers-update", (event) =>
+      applyPeers(event.payload),
+    );
+    unlistenPeers
+      .then(() => invoke<Peer[]>("get_peers"))
+      .then(applyPeers)
+      .then(() => invoke("refresh_peers"))
+      .catch((e) => console.error("Failed to load peers:", e));
 
     const unlistenFileStart = listen("file-receive-start", (event: any) => {
       const { transfer_id, file_name } = event.payload;

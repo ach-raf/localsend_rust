@@ -177,6 +177,11 @@ fn refresh_peers() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_peers() -> Vec<crate::discovery::Peer> {
+    crate::discovery::current_peers()
+}
+
+#[tauri::command]
 fn generate_random_name() -> String {
     generate_anime_name()
 }
@@ -455,6 +460,7 @@ pub fn run() {
             send_file_bytes_to_peer,
             send_text_to_peer,
             refresh_peers,
+            get_peers,
             scan_media_file,
             generate_random_name,
             respond_to_file_transfer,
