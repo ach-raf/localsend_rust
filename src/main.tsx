@@ -4,6 +4,7 @@ import App from "./App";
 import { MantineProvider, createTheme } from "@mantine/core";
 import { Toaster } from "sonner";
 import AndroidNotificationBridge from "./components/AndroidNotificationBridge";
+import "./fonts.css";
 import "@mantine/core/styles.css";
 import "@mantine/dropzone/styles.css";
 import "sonner/dist/styles.css";
