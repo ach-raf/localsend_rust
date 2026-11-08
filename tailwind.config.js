@@ -30,8 +30,6 @@ export default {
         "depth-m": "var(--shadow-m)",
         "depth-l": "var(--shadow-l)",
         "depth-inset": "var(--shadow-inset)",
-        "glow-primary": "var(--glow-primary)",
-        "glow-success": "var(--glow-success)",
       },
       transitionDuration: {
         fast: "150ms",
@@ -40,30 +38,6 @@ export default {
       },
       transitionTimingFunction: {
         smooth: "cubic-bezier(0.4, 0, 0.2, 1)",
-      },
-      animation: {
-        fadeIn: "fadeIn 250ms ease-out",
-        pulse: "pulse 2s ease-in-out infinite",
-      },
-      keyframes: {
-        fadeIn: {
-          from: {
-            opacity: "0",
-            transform: "translateY(10px)",
-          },
-          to: {
-            opacity: "1",
-            transform: "translateY(0)",
-          },
-        },
-        pulse: {
-          "0%, 100%": {
-            opacity: "1",
-          },
-          "50%": {
-            opacity: "0.7",
-          },
-        },
       },
     },
   },

@@ -1,11 +1,8 @@
 import { Badge, Button, Group, Loader, Stack, Text, ThemeIcon, Title } from "@mantine/core";
-import {
-  IconDeviceDesktop,
-  IconFile,
-  IconMessage2,
-  IconX,
-} from "@tabler/icons-react";
+import { IconFile, IconMessage2, IconX } from "@tabler/icons-react";
 import type { IncomingShare } from "tauri-plugin-android-share-target-api";
+import { formatFileSize } from "../lib/incomingRequests";
+import { monogram } from "../lib/peerDisplay";
 
 export interface SharePeer {
   ip: string;
@@ -22,13 +19,6 @@ interface ShareSheetProps {
   sendingKey: string | null;
   onSend(peer: SharePeer): void;
   onCancel(): void;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes <= 0) return "0 B";
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 3);
-  return `${parseFloat((bytes / Math.pow(1024, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 /**
@@ -84,9 +74,11 @@ export default function ShareSheet({
               {title}
             </Text>
             <Text size="xs" c="dimmed">
-              {fileCount > 1 && totalSize > 0 ? `${formatSize(totalSize)}` : null}
+              {fileCount > 1 && totalSize > 0
+                ? `${formatFileSize(totalSize)}`
+                : null}
               {fileCount === 1 && firstFile.size != null
-                ? formatSize(firstFile.size)
+                ? formatFileSize(firstFile.size)
                 : null}
               {fileCount > 0 && text ? " · with text" : null}
               {fileCount === 0 && text
@@ -135,9 +127,9 @@ export default function ShareSheet({
                 disabled={sending}
                 onClick={() => onSend(peer)}
               >
-                <ThemeIcon size={44} variant="light" color="phosphor" radius="md">
-                  <IconDeviceDesktop size={22} />
-                </ThemeIcon>
+                <div className="peer-avatar" aria-hidden="true">
+                  <span>{monogram(peer.alias)}</span>
+                </div>
                 <div className="min-w-0 flex-1 text-left">
                   <Text fw={600} truncate className="text-text-primary">
                     {peer.alias}

@@ -58,6 +58,7 @@ import {
   openReceivedFile,
   type ReceivedFileRef,
 } from "../lib/receivedFiles";
+import { monogram } from "../lib/peerDisplay";
 
 interface Peer {
   id?: string;
@@ -79,16 +80,6 @@ interface BatchTransferRequest {
   sender_alias: string;
   sender_ip: string;
   files: { name: string; size: number }[];
-}
-
-/** "Naruto-Luffy" -> "NL", "Pixel 8" -> "P8", "Zed" -> "ZE". */
-function monogram(alias: string): string {
-  const words = alias.split(/[\s\-_]+/).filter(Boolean);
-  const letters =
-    words.length > 1
-      ? words[0][0] + words[1][0]
-      : (words[0] ?? "?").slice(0, 2);
-  return letters.toUpperCase();
 }
 
 export default function Home() {
@@ -781,13 +772,8 @@ export default function Home() {
             }
           >
             <Paper p={{ base: "sm", sm: "lg" }} h="100%" className="peers-panel-paper">
-              <Group
-                justify="space-between"
-                mb="lg"
-                wrap="nowrap"
-                className="responsive-header-group"
-              >
-                <Title order={3} className="responsive-title text-text-primary">
+              <Group justify="space-between" mb="lg" wrap="nowrap">
+                <Title order={3} className="text-text-primary">
                   Nearby Peers
                 </Title>
                 <Tooltip label="Refresh discovery">
@@ -797,13 +783,8 @@ export default function Home() {
                     onClick={handleRefreshPeers}
                     loading={refreshing}
                     size="xl"
-                    className="responsive-icon-button"
                   >
-                    <IconRefresh
-                      size={24}
-                      stroke={2}
-                      className="responsive-icon"
-                    />
+                    <IconRefresh size={24} stroke={2} />
                   </ActionIcon>
                 </Tooltip>
               </Group>
@@ -815,10 +796,12 @@ export default function Home() {
                     <i></i>
                     <i></i>
                   </div>
-                  <h4>Listening for nearby devices</h4>
+                  <h4>
+                    Listening for <b>nearby devices</b>
+                  </h4>
                   <p>
-                    Waiting for devices on your network. Open Local Share on
-                    another machine or phone.
+                    Open Local Share on another device — both must be on the
+                    same Wi-Fi.
                   </p>
                 </div>
               ) : (
@@ -854,9 +837,7 @@ export default function Home() {
                             <span>:{peer.port}</span>
                           </div>
                           {dragTargetPeerKey === key && (
-                            <div className="peer-drop-hint t-mono">
-                              Drop to send
-                            </div>
+                            <div className="peer-drop-hint">Drop to send</div>
                           )}
                         </div>
                         <IconChevronRight
@@ -886,13 +867,12 @@ export default function Home() {
                   mb="lg"
                   wrap="nowrap"
                   align="center"
-                  className="responsive-header-group"
                 >
                   <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-                    <div className="panel-kicker t-mono">Send to</div>
+                    <div className="panel-kicker">Send to</div>
                     <Title
                       order={3}
-                      className="responsive-title text-text-primary break-words leading-[1.2]"
+                      className="text-text-primary break-words leading-[1.2]"
                     >
                       {selectedPeer.alias}
                     </Title>
@@ -911,26 +891,16 @@ export default function Home() {
                 </Group>
 
                   <Tabs defaultValue="files">
-                  <Tabs.List
-                    mb="lg"
-                    className="responsive-tabs-list"
-                    style={{ gap: "0.5rem" }}
-                  >
+                  <Tabs.List mb="lg" style={{ gap: "0.5rem" }}>
                     <Tabs.Tab
                       value="files"
-                      leftSection={
-                        <IconFile size={16} className="responsive-icon" />
-                      }
-                      className="responsive-tab"
+                      leftSection={<IconFile size={16} />}
                     >
                       Files
                     </Tabs.Tab>
                     <Tabs.Tab
                       value="text"
-                      leftSection={
-                        <IconSend size={16} className="responsive-icon" />
-                      }
-                      className="responsive-tab"
+                      leftSection={<IconSend size={16} />}
                     >
                       Text
                     </Tabs.Tab>
@@ -946,20 +916,8 @@ export default function Home() {
                       className="upload-area flex flex-col items-center justify-center gap-4 py-[clamp(1rem,3vw,2rem)] px-[clamp(0.5rem,2vw,1rem)] cursor-pointer h-full"
                       onClick={handleSelectFiles}
                     >
-                      <div
-                        className="responsive-upload-icon-container rounded-[clamp(8px,2vw,16px)] p-[clamp(0.5rem,2vw,0.75rem)]"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
-                          boxShadow: "var(--shadow-m)",
-                        }}
-                      >
-                        <IconUpload
-                          size={24}
-                          color="var(--on-accent)"
-                          stroke={2}
-                          className="responsive-upload-icon"
-                        />
+                      <div className="upload-mark">
+                        <IconUpload size={24} stroke={2} />
                       </div>
                       <div
                         style={{
@@ -971,14 +929,12 @@ export default function Home() {
                         <Text
                           fw={600}
                           mb="xs"
-                          className="responsive-upload-title"
                           style={{ wordBreak: "break-word" }}
                         >
                           Send files to {selectedPeer.alias}
                         </Text>
-                        <Text c="dimmed" className="responsive-upload-subtitle">
-                          Drag & drop files here or click anywhere to select
-                          files
+                        <Text c="dimmed" size="sm">
+                          Drag & drop, or click to browse
                         </Text>
                       </div>
                       <Button
@@ -989,7 +945,7 @@ export default function Home() {
                         }}
                         loading={sending}
                         size="lg"
-                        className="depth-button-primary responsive-button min-w-[clamp(160px,40vw,200px)] h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
+                        className="depth-button-primary min-w-[clamp(160px,40vw,200px)] h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
                       >
                         Select Files
                       </Button>
@@ -1003,7 +959,6 @@ export default function Home() {
                   >
                     <Stack
                       gap="md"
-                      className="responsive-stack"
                       style={{ height: "100%", overflow: "auto" }}
                     >
                       <div
@@ -1021,7 +976,6 @@ export default function Home() {
                           maxRows={10}
                           value={message}
                           onChange={(e) => setMessage(e.currentTarget.value)}
-                          className="responsive-textarea"
                           styles={{
                             input: {
                               fontSize: "clamp(1.1rem, 2.5vw, 1.25rem)",
@@ -1065,10 +1019,7 @@ export default function Home() {
                             className="absolute top-2 right-2"
                             style={{ zIndex: 10 }}
                           >
-                            <IconClipboard
-                              size={18}
-                              className="responsive-icon"
-                            />
+                            <IconClipboard size={18} />
                           </ActionIcon>
                         </Tooltip>
                       </div>
@@ -1078,7 +1029,7 @@ export default function Home() {
                         loading={sending}
                         disabled={!message.trim()}
                         size="lg"
-                        className="depth-button-primary responsive-button h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
+                        className="depth-button-primary h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
                         fullWidth
                       >
                         Send Message
@@ -1097,8 +1048,8 @@ export default function Home() {
                   <div className="gl">
                     <IconDeviceDesktop size={22} />
                   </div>
-                  <h4>Pick a device to start</h4>
-                  <p>Choose a device from the nearby peers list.</p>
+                  <h4>No device selected</h4>
+                  <p>Choose a peer to send files or text.</p>
                 </div>
               </Paper>
             )}

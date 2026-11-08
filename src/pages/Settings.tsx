@@ -107,7 +107,7 @@ export default function Settings() {
           >
             Settings
           </Title>
-          <Text className="t-mono settings-purpose">
+          <Text className="settings-purpose">
             How this device appears and listens on the network
           </Text>
         </header>

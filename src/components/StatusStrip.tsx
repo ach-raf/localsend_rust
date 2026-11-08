@@ -37,7 +37,7 @@ export default function StatusStrip() {
   return (
     <div className={`status-strip${receiving ? "" : " is-paused"}`}>
       <span className="status-dot" aria-hidden="true" />
-      <span className="t-mono status-text">
+      <span className="status-text">
         {receiving ? (
           <>
             Visible as <b>{settings.alias}</b> · asks before saving anything
@@ -51,7 +51,7 @@ export default function StatusStrip() {
       {!receiving && (
         <button
           type="button"
-          className="t-mono status-link"
+          className="status-link"
           onClick={() => navigate("/settings")}
         >
           Turn on
