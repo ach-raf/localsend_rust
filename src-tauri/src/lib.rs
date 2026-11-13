@@ -6,10 +6,11 @@ mod transfer;
 
 use crate::config::{generate_anime_name, load_config, save_config, AppConfig};
 use crate::discovery::refresh_discovery;
-use crate::server::start_server;
+use crate::server::{resolve_download_dir, start_server};
 use crate::transfer::{send_file, send_file_bytes, send_text};
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, MutexGuard,
@@ -41,6 +42,9 @@ pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 struct AppState {
     config: Mutex<AppConfig>,
+    /// Effective save directory for received files, shared with the HTTP
+    /// server (see `ServerState`) so Settings changes apply without restart.
+    download_dir: Arc<Mutex<PathBuf>>,
     pending_transfers: PendingTransfers,
     app_foreground: Arc<AtomicBool>,
     receiving: Arc<AtomicBool>,
@@ -63,14 +67,41 @@ fn save_settings(
     state: State<'_, AppState>,
     mut new_config: AppConfig,
 ) -> Result<(), String> {
-    let (old_alias, device_id) = {
+    let (old_alias, old_download_dir, device_id) = {
         let config = lock(&state.config);
-        (config.alias.clone(), config.device_id.clone())
+        (
+            config.alias.clone(),
+            config.download_dir.clone(),
+            config.device_id.clone(),
+        )
     };
 
     // The identity is owned by the backend; the UI payload never carries it.
     new_config.device_id = device_id;
+    // An empty/blank folder means "back to the default Downloads folder".
+    new_config.download_dir = new_config
+        .download_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|dir| !dir.is_empty())
+        .map(str::to_string);
     let new_config = new_config.validated()?;
+
+    // Validate the target folder before persisting: a directory we cannot
+    // create must never become the saved setting. Creating it here also means
+    // incoming transfers can land in it immediately.
+    #[cfg(not(target_os = "android"))]
+    if new_config.download_dir != old_download_dir {
+        if let Some(dir) = new_config.download_dir.as_deref() {
+            if let Err(e) = std::fs::create_dir_all(dir) {
+                eprintln!("Rejecting download dir {dir:?}: {}", e);
+                return Err(format!("Cannot use \"{dir}\" as the save folder: {e}"));
+            }
+            eprintln!("Download directory changed to {:?}", dir);
+        }
+    }
+    #[cfg(target_os = "android")]
+    let _ = old_download_dir; // setting is desktop-only; nothing to validate
 
     // Persist first: if the disk write fails the running config is untouched.
     save_config(&app, &new_config)?;
@@ -78,6 +109,9 @@ fn save_settings(
     state
         .receiving
         .store(new_config.receiving_enabled, Ordering::Relaxed);
+
+    // Retarget the live HTTP server so the change applies without a restart.
+    *lock(&state.download_dir) = resolve_download_dir(&app, new_config.download_dir.as_deref());
 
     if old_alias != new_config.alias {
         eprintln!(
@@ -435,6 +469,14 @@ pub fn run() {
 
             let device_id = config.device_id.clone();
 
+            // Resolve the save folder once (config override or platform
+            // Downloads) and share it between AppState and the HTTP server so
+            // a Settings change applies live.
+            let download_dir = Arc::new(Mutex::new(resolve_download_dir(
+                app.handle(),
+                config.download_dir.as_deref(),
+            )));
+
             let pending_transfers = PendingTransfers {
                 transfers: Arc::new(Mutex::new(HashMap::new())),
                 authorized_sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -444,6 +486,7 @@ pub fn run() {
 
             app.manage(AppState {
                 config: Mutex::new(config),
+                download_dir: download_dir.clone(),
                 pending_transfers: pending_transfers.clone(),
                 app_foreground: app_foreground.clone(),
                 receiving: receiving.clone(),
@@ -484,7 +527,15 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 eprintln!("Starting HTTP server...");
-                start_server(handle, port, pending_transfers, app_foreground, receiving).await;
+                start_server(
+                    handle,
+                    port,
+                    pending_transfers,
+                    app_foreground,
+                    receiving,
+                    download_dir,
+                )
+                .await;
             });
 
             Ok(())

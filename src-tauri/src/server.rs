@@ -17,7 +17,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::time::{Duration, Instant};
 use tauri::Emitter;
@@ -48,7 +48,10 @@ const JSON_BODY_LIMIT: usize = 512 * 1024;
 #[derive(Clone)]
 struct ServerState {
     app_handle: AppHandle,
-    download_dir: PathBuf,
+    /// Effective save directory, shared with `AppState` so a Settings change
+    /// applies to the running server without a restart. Android ignores it
+    /// (MediaStore owns the location).
+    download_dir: Arc<Mutex<PathBuf>>,
     pending_transfers: PendingTransfers,
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]
     app_foreground: Arc<AtomicBool>,
@@ -113,32 +116,58 @@ struct MessageEvent {
     content: String,
 }
 
+/// Picks the folder received files are written to: the user's configured
+/// folder when set (desktop), otherwise the platform Downloads folder, with a
+/// home-directory fallback for the rare systems that don't report one.
+pub fn resolve_download_dir(app: &AppHandle, configured: Option<&str>) -> PathBuf {
+    #[cfg(target_os = "android")]
+    {
+        let _ = configured;
+        platform_download_dir(app)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        configured
+            .map(str::trim)
+            .filter(|dir| !dir.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| platform_download_dir(app))
+    }
+}
+
+/// The OS Downloads folder, or `~/Downloads` when the platform lookup fails.
+fn platform_download_dir(app: &AppHandle) -> PathBuf {
+    app.path().download_dir().unwrap_or_else(|_| {
+        let home = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        home.join("Downloads")
+    })
+}
+
 pub async fn start_server(
     app: AppHandle,
     port: u16,
     pending_transfers: PendingTransfers,
     app_foreground: Arc<AtomicBool>,
     receiving: Arc<AtomicBool>,
+    download_dir: Arc<Mutex<PathBuf>>,
 ) {
-    let download_dir = app.path().download_dir().unwrap_or_else(|_| {
-        let home = std::env::var("USERPROFILE")
-            .or_else(|_| std::env::var("HOME"))
-            .map(PathBuf::from)
-            .unwrap_or_default();
-        home.join("Downloads")
-    });
+    let resolved_dir = lock(&download_dir).clone();
 
     // Android writes through MediaStore, so there's no directory to manage.
     #[cfg(not(target_os = "android"))]
     {
-        if !download_dir.exists() {
-            if let Err(e) = fs::create_dir_all(&download_dir).await {
+        if !resolved_dir.exists() {
+            if let Err(e) = fs::create_dir_all(&resolved_dir).await {
                 eprintln!("Failed to create download directory: {}", e);
             }
         }
-        sweep_stale_parts(&download_dir).await;
+        sweep_stale_parts(&resolved_dir).await;
     }
-    eprintln!("Download directory: {:?}", download_dir);
+    eprintln!("Download directory: {:?}", resolved_dir);
 
     let state = ServerState {
         app_handle: app.clone(),
@@ -764,13 +793,16 @@ async fn open_sink(
     name: &str,
     mime: Option<&str>,
 ) -> Result<Sink, String> {
+    // Clone through the lock so a Settings change mid-transfer can't race the
+    // create call.
+    let download_dir = lock(&state.download_dir).clone();
     #[cfg(not(target_os = "android"))]
     {
-        Sink::create(&state.download_dir, name, mime).await
+        Sink::create(&download_dir, name, mime).await
     }
     #[cfg(target_os = "android")]
     {
-        Sink::create(&state.download_dir, name, mime, &state.app_handle).await
+        Sink::create(&download_dir, name, mime, &state.app_handle).await
     }
 }
 
