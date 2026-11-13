@@ -15,6 +15,11 @@ pub struct AppConfig {
     /// still visible, but every inbound request is refused up front.
     #[serde(default = "default_true")]
     pub receiving_enabled: bool,
+    /// Where received transfers are saved on desktop. `None`/empty = the
+    /// platform's Downloads folder. Ignored on Android (MediaStore owns it).
+    /// `default` so old settings files load unchanged.
+    #[serde(default)]
+    pub download_dir: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -1333,6 +1338,7 @@ impl Default for AppConfig {
             port: 3030,
             device_id: uuid::Uuid::new_v4().to_string(),
             receiving_enabled: true,
+            download_dir: None,
         }
     }
 }

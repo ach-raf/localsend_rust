@@ -113,9 +113,9 @@ function Layout() {
               </span>
             </div>
             {/* Narrow screens: squeeze the device name next to the wordmark
-                (shown exactly when the right-side label hides — complementary
-                sm breakpoint). Hairline separator + mono voice, truncates so a
-                long alias never overflows the header. */}
+                (the navbar drawer is closed there, so this is the only place it
+                shows). Hairline separator + mono voice, truncates so a long
+                alias never overflows the header. */}
             <div
               className="flex sm:hidden items-center gap-2 min-w-0"
               title={`This device · ${deviceName}`}
@@ -129,17 +129,11 @@ function Layout() {
               </span>
             </div>
           </Group>
-          <div className="t-mono text-[0.72rem] text-text-tertiary hidden sm:block">
-            this device <span className="text-text-secondary">{deviceName}</span>
-          </div>
         </Group>
       </AppShell.Header>
 
       <AppShell.Navbar className="bg-bg-dark border-r border-border-subtle">
         <div className="h-full flex flex-col p-4 sm:p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
-          <div className="t-mono text-[0.68rem] tracking-[0.14em] uppercase text-text-tertiary px-2 mb-2">
-            Navigate
-          </div>
           <Stack gap="xs" className="flex-1">
             <NavLink
               label="Home"

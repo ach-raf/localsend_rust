@@ -58,6 +58,7 @@ import {
   openReceivedFile,
   type ReceivedFileRef,
 } from "../lib/receivedFiles";
+import { monogram } from "../lib/peerDisplay";
 
 interface Peer {
   id?: string;
@@ -81,16 +82,6 @@ interface BatchTransferRequest {
   files: { name: string; size: number }[];
 }
 
-/** "Naruto-Luffy" -> "NL", "Pixel 8" -> "P8", "Zed" -> "ZE". */
-function monogram(alias: string): string {
-  const words = alias.split(/[\s\-_]+/).filter(Boolean);
-  const letters =
-    words.length > 1
-      ? words[0][0] + words[1][0]
-      : (words[0] ?? "?").slice(0, 2);
-  return letters.toUpperCase();
-}
-
 export default function Home() {
   const androidEnabled = useMemo(detectAndroid, []);
   const [peers, setPeers] = useState<Peer[]>([]);
@@ -107,6 +98,10 @@ export default function Home() {
   const [dragTargetPeerKey, setDragTargetPeerKey] = useState<string | null>(
     null,
   );
+  // Whole-window drag feedback + held drops: a drop that hits no peer card
+  // goes to the selected device, or waits here until the user taps one.
+  const [dragOverWindow, setDragOverWindow] = useState(false);
+  const [stagedDrops, setStagedDrops] = useState<string[]>([]);
   const {
     shares: pendingShares,
     currentShare: pendingShare,
@@ -376,6 +371,7 @@ export default function Home() {
       async (event) => {
         if (event.payload.type === "leave") {
           setDragTargetPeerKey(null);
+          setDragOverWindow(false);
           return;
         }
 
@@ -390,52 +386,38 @@ export default function Home() {
 
         if (event.payload.type === "enter" || event.payload.type === "over") {
           setDragTargetPeerKey(targetKey);
+          setDragOverWindow(true);
           return;
         }
 
+        // Drop: every pixel of the window is a valid target. A peer card
+        // targets that card; anything else targets the selected device —
+        // including while the Text tab is open — or is held for later when
+        // no device is selected.
         setDragTargetPeerKey(null);
-        if (sendingRef.current) {
-          notifications.show({
-            title: "Transfer in progress",
-            message: "Wait for the current batch to finish before dropping more files.",
-            color: "yellow",
-          });
-          return;
-        }
+        setDragOverWindow(false);
+        const paths = event.payload.paths;
+        if (paths.length === 0) return;
 
         const targetPeer = targetKey
           ? peersRef.current.find(
               (peer) => `${peer.ip}:${peer.port}` === targetKey,
             )
-          : element?.closest("[data-selected-peer-drop-zone]")
-            ? selectedPeerRef.current
-            : null;
+          : selectedPeerRef.current;
 
         if (!targetPeer) {
+          // Never lose a drop: hold the files until a device is tapped.
+          setStagedDrops((prev) => [...prev, ...paths]);
           notifications.show({
-            title: "Drop files on a device",
-            message: "Choose a peer card or the selected peer's file panel.",
-            color: "yellow",
+            title: "Files ready",
+            message: "Dropped files are waiting — tap a device to send them.",
+            color: "phosphor",
           });
           return;
         }
 
         setSelectedPeer(targetPeer);
-        sendingRef.current = true;
-        setSending(true);
-        try {
-          await sendFilePathsToPeer(targetPeer, event.payload.paths);
-        } catch (error) {
-          console.error("Failed to send dropped files:", error);
-          notifications.show({
-            title: "Unable to send files",
-            message: String(error),
-            color: "red",
-          });
-        } finally {
-          sendingRef.current = false;
-          setSending(false);
-        }
+        await sendFilesToPeer(targetPeer, event.payload.paths);
       },
     );
 
@@ -454,6 +436,40 @@ export default function Home() {
       unlistenFileDrop.then((f) => f());
       unlistenProgress.then((f) => f());
     };
+  }, []);
+
+  /**
+   * The one outgoing-files path: guards concurrent sends and surfaces
+   * failures. Used by the file picker, window drops, and staged sends so
+   * they can never drift apart.
+   */
+  const sendFilesToPeer = useCallback(async (peer: Peer, paths: string[]) => {
+    if (sendingRef.current) {
+      notifications.show({
+        title: "Transfer in progress",
+        message:
+          "Wait for the current batch to finish before sending more files.",
+        color: "yellow",
+      });
+      return false;
+    }
+    sendingRef.current = true;
+    setSending(true);
+    try {
+      await sendFilePathsToPeer(peer, paths);
+      return true;
+    } catch (error) {
+      console.error("Failed to send files:", error);
+      notifications.show({
+        title: "Unable to send files",
+        message: String(error),
+        color: "red",
+      });
+      return false;
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
   }, []);
 
   const handleSelectFiles = async () => {
@@ -544,19 +560,26 @@ export default function Home() {
         filePaths = Array.isArray(selected) ? selected : [selected];
       }
 
-      if (sendingRef.current) return;
-      sendingRef.current = true;
-      setSending(true);
-      await sendFilePathsToPeer(selectedPeer, filePaths);
+      await sendFilesToPeer(selectedPeer, filePaths);
     } catch (e) {
       notifications.show({
         title: "Error",
         message: `Failed to open file dialog: ${e}`,
         color: "red",
       });
-    } finally {
-      sendingRef.current = false;
-      setSending(false);
+    }
+  };
+
+  /** Selecting a device flushes any files staged from a no-target drop. */
+  const handlePeerClick = async (peer: Peer) => {
+    setSelectedPeer(peer);
+    if (stagedDrops.length === 0) return;
+    const files = stagedDrops;
+    setStagedDrops([]);
+    const sent = await sendFilesToPeer(peer, files);
+    if (!sent) {
+      // Put them back — a failed send must not eat the user's files.
+      setStagedDrops((prev) => [...files, ...prev]);
     }
   };
 
@@ -781,13 +804,8 @@ export default function Home() {
             }
           >
             <Paper p={{ base: "sm", sm: "lg" }} h="100%" className="peers-panel-paper">
-              <Group
-                justify="space-between"
-                mb="lg"
-                wrap="nowrap"
-                className="responsive-header-group"
-              >
-                <Title order={3} className="responsive-title text-text-primary">
+              <Group justify="space-between" mb="lg" wrap="nowrap">
+                <Title order={3} className="text-text-primary">
                   Nearby Peers
                 </Title>
                 <Tooltip label="Refresh discovery">
@@ -797,16 +815,30 @@ export default function Home() {
                     onClick={handleRefreshPeers}
                     loading={refreshing}
                     size="xl"
-                    className="responsive-icon-button"
                   >
-                    <IconRefresh
-                      size={24}
-                      stroke={2}
-                      className="responsive-icon"
-                    />
+                    <IconRefresh size={24} stroke={2} />
                   </ActionIcon>
                 </Tooltip>
               </Group>
+
+              {stagedDrops.length > 0 && (
+                <div className="staged-strip" role="status">
+                  <IconFile size={18} aria-hidden="true" />
+                  <span className="staged-strip-text">
+                    <span className="t-mono">{stagedDrops.length}</span>{" "}
+                    {stagedDrops.length === 1 ? "file" : "files"} ready — tap a
+                    device to send
+                  </span>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    aria-label="Discard staged files"
+                    onClick={() => setStagedDrops([])}
+                  >
+                    <IconX size={16} />
+                  </ActionIcon>
+                </div>
+              )}
 
               {peers.length === 0 ? (
                 <div className="empty-listen">
@@ -815,10 +847,12 @@ export default function Home() {
                     <i></i>
                     <i></i>
                   </div>
-                  <h4>Listening for nearby devices</h4>
+                  <h4>
+                    Listening for <b>nearby devices</b>
+                  </h4>
                   <p>
-                    Waiting for devices on your network. Open Local Share on
-                    another machine or phone.
+                    Open Local Share on another device — both must be on the
+                    same Wi-Fi.
                   </p>
                 </div>
               ) : (
@@ -835,11 +869,11 @@ export default function Home() {
                         className={`peer-card ${
                           selectedPeer?.ip === peer.ip ? "selected" : ""
                         } ${dragTargetPeerKey === key ? "peer-drop-target" : ""}`}
-                        onClick={() => setSelectedPeer(peer)}
+                        onClick={() => handlePeerClick(peer)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            setSelectedPeer(peer);
+                            handlePeerClick(peer);
                           }
                         }}
                       >
@@ -854,9 +888,7 @@ export default function Home() {
                             <span>:{peer.port}</span>
                           </div>
                           {dragTargetPeerKey === key && (
-                            <div className="peer-drop-hint t-mono">
-                              Drop to send
-                            </div>
+                            <div className="peer-drop-hint">Drop to send</div>
                           )}
                         </div>
                         <IconChevronRight
@@ -886,13 +918,12 @@ export default function Home() {
                   mb="lg"
                   wrap="nowrap"
                   align="center"
-                  className="responsive-header-group"
                 >
                   <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-                    <div className="panel-kicker t-mono">Send to</div>
+                    <div className="panel-kicker">Send to</div>
                     <Title
                       order={3}
-                      className="responsive-title text-text-primary break-words leading-[1.2]"
+                      className="text-text-primary break-words leading-[1.2]"
                     >
                       {selectedPeer.alias}
                     </Title>
@@ -911,26 +942,16 @@ export default function Home() {
                 </Group>
 
                   <Tabs defaultValue="files">
-                  <Tabs.List
-                    mb="lg"
-                    className="responsive-tabs-list"
-                    style={{ gap: "0.5rem" }}
-                  >
+                  <Tabs.List mb="lg" style={{ gap: "0.5rem" }}>
                     <Tabs.Tab
                       value="files"
-                      leftSection={
-                        <IconFile size={16} className="responsive-icon" />
-                      }
-                      className="responsive-tab"
+                      leftSection={<IconFile size={16} />}
                     >
                       Files
                     </Tabs.Tab>
                     <Tabs.Tab
                       value="text"
-                      leftSection={
-                        <IconSend size={16} className="responsive-icon" />
-                      }
-                      className="responsive-tab"
+                      leftSection={<IconSend size={16} />}
                     >
                       Text
                     </Tabs.Tab>
@@ -942,24 +963,11 @@ export default function Home() {
                     style={{ overflow: "hidden" }}
                   >
                     <div
-                      data-selected-peer-drop-zone
                       className="upload-area flex flex-col items-center justify-center gap-4 py-[clamp(1rem,3vw,2rem)] px-[clamp(0.5rem,2vw,1rem)] cursor-pointer h-full"
                       onClick={handleSelectFiles}
                     >
-                      <div
-                        className="responsive-upload-icon-container rounded-[clamp(8px,2vw,16px)] p-[clamp(0.5rem,2vw,0.75rem)]"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, var(--accent-primary-light), var(--accent-primary))",
-                          boxShadow: "var(--shadow-m)",
-                        }}
-                      >
-                        <IconUpload
-                          size={24}
-                          color="var(--on-accent)"
-                          stroke={2}
-                          className="responsive-upload-icon"
-                        />
+                      <div className="upload-mark">
+                        <IconUpload size={24} stroke={2} />
                       </div>
                       <div
                         style={{
@@ -971,14 +979,12 @@ export default function Home() {
                         <Text
                           fw={600}
                           mb="xs"
-                          className="responsive-upload-title"
                           style={{ wordBreak: "break-word" }}
                         >
                           Send files to {selectedPeer.alias}
                         </Text>
-                        <Text c="dimmed" className="responsive-upload-subtitle">
-                          Drag & drop files here or click anywhere to select
-                          files
+                        <Text c="dimmed" size="sm">
+                          Drag & drop, or click to browse
                         </Text>
                       </div>
                       <Button
@@ -989,7 +995,7 @@ export default function Home() {
                         }}
                         loading={sending}
                         size="lg"
-                        className="depth-button-primary responsive-button min-w-[clamp(160px,40vw,200px)] h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
+                        className="depth-button-primary min-w-[clamp(160px,40vw,200px)] h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
                       >
                         Select Files
                       </Button>
@@ -1003,7 +1009,6 @@ export default function Home() {
                   >
                     <Stack
                       gap="md"
-                      className="responsive-stack"
                       style={{ height: "100%", overflow: "auto" }}
                     >
                       <div
@@ -1021,7 +1026,6 @@ export default function Home() {
                           maxRows={10}
                           value={message}
                           onChange={(e) => setMessage(e.currentTarget.value)}
-                          className="responsive-textarea"
                           styles={{
                             input: {
                               fontSize: "clamp(1.1rem, 2.5vw, 1.25rem)",
@@ -1065,10 +1069,7 @@ export default function Home() {
                             className="absolute top-2 right-2"
                             style={{ zIndex: 10 }}
                           >
-                            <IconClipboard
-                              size={18}
-                              className="responsive-icon"
-                            />
+                            <IconClipboard size={18} />
                           </ActionIcon>
                         </Tooltip>
                       </div>
@@ -1078,7 +1079,7 @@ export default function Home() {
                         loading={sending}
                         disabled={!message.trim()}
                         size="lg"
-                        className="depth-button-primary responsive-button h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
+                        className="depth-button-primary h-[clamp(48px,10vw,56px)] text-[clamp(1.1rem,2.5vw,1.25rem)]"
                         fullWidth
                       >
                         Send Message
@@ -1097,14 +1098,31 @@ export default function Home() {
                   <div className="gl">
                     <IconDeviceDesktop size={22} />
                   </div>
-                  <h4>Pick a device to start</h4>
-                  <p>Choose a device from the nearby peers list.</p>
+                  <h4>No device selected</h4>
+                  <p>Choose a peer to send files or text.</p>
                 </div>
               </Paper>
             )}
           </Grid.Col>
         </Grid>
       </Container>
+      )}
+
+      {dragOverWindow && (
+        <div className="drop-overlay" aria-hidden="true">
+          <div className="drop-overlay-card">
+            <IconUpload size={28} stroke={2} />
+            <span>
+              {selectedPeer ? (
+                <>
+                  Drop to send to <b>{selectedPeer.alias}</b>
+                </>
+              ) : (
+                "Drop files, then tap a device to send"
+              )}
+            </span>
+          </div>
+        </div>
       )}
 
       {currentMessage && (

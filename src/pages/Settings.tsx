@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Container,
   Title,
@@ -8,14 +8,17 @@ import {
   Switch,
   Text,
 } from "@mantine/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { notifications } from "../lib/notifications";
+import { detectAndroid } from "../lib/platform";
 import { invoke } from "@tauri-apps/api/core";
-import { IconDice, IconShieldCheck } from "@tabler/icons-react";
+import { IconDice, IconFolderOpen, IconShieldCheck } from "@tabler/icons-react";
 
 interface AppConfig {
   alias: string;
   port: number;
   receiving_enabled: boolean;
+  download_dir: string | null;
 }
 
 export default function Settings() {
@@ -23,8 +26,10 @@ export default function Settings() {
     alias: "",
     port: 3030,
     receiving_enabled: true,
+    download_dir: null,
   });
   const [loading, setLoading] = useState(false);
+  const androidEnabled = useMemo(detectAndroid, []);
 
   useEffect(() => {
     loadSettings();
@@ -70,6 +75,22 @@ export default function Settings() {
         ? "32 characters or fewer"
         : null;
 
+  const handleBrowseFolder = async () => {
+    try {
+      const selected = await open({ directory: true, multiple: false });
+      if (typeof selected === "string" && selected.trim()) {
+        setConfig((prev) => ({ ...prev, download_dir: selected }));
+      }
+    } catch (e) {
+      console.error(e);
+      notifications.show({
+        title: "Error",
+        message: `Failed to open folder picker: ${String(e)}`,
+        color: "red",
+      });
+    }
+  };
+
   const handleSave = async () => {
     if (aliasError) return;
     setLoading(true);
@@ -107,7 +128,7 @@ export default function Settings() {
           >
             Settings
           </Title>
-          <Text className="t-mono settings-purpose">
+          <Text className="settings-purpose">
             How this device appears and listens on the network
           </Text>
         </header>
@@ -183,6 +204,53 @@ export default function Settings() {
               <li>Files never open automatically, and risky types are flagged.</li>
             </ul>
           </div>
+
+          <div className="settings-divider" />
+
+          {/* Storage — desktop only; Android saves through MediaStore */}
+          {!androidEnabled && (
+            <>
+              <div className="settings-group-label">Storage</div>
+              <div className="settings-row">
+                <div className="settings-row-label">
+                  <div className="settings-field-name">
+                    Save received files to
+                  </div>
+                  <div className="settings-field-desc">
+                    {config.download_dir ? (
+                      <span className="t-mono">{config.download_dir}</span>
+                    ) : (
+                      "Default — your Downloads folder"
+                    )}
+                    {" · Applies immediately, no restart"}
+                  </div>
+                </div>
+                <div className="settings-row-control">
+                  <Button
+                    variant="light"
+                    size="md"
+                    onClick={handleBrowseFolder}
+                    leftSection={<IconFolderOpen size={18} />}
+                    className="depth-button-secondary settings-action"
+                  >
+                    Browse
+                  </Button>
+                  {config.download_dir && (
+                    <Button
+                      variant="subtle"
+                      color="gray"
+                      size="md"
+                      onClick={() =>
+                        setConfig((prev) => ({ ...prev, download_dir: null }))
+                      }
+                    >
+                      Reset
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="settings-divider" />
 
