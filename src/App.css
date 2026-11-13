@@ -494,6 +494,61 @@ body {
     0 0 0 4px color-mix(in oklch, var(--accent-primary) 12%, transparent);
 }
 
+/* ============================================
+   WINDOW-WIDE DROP — overlay while dragging,
+   strip for files held before a device is picked
+   ============================================ */
+
+/* Purely visual: pointer-events none keeps it invisible to hit-testing, so
+   drops keep resolving against the content underneath. */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  pointer-events: none;
+  background: color-mix(in oklch, var(--accent-primary) 7%, transparent);
+  border: 2px dashed color-mix(in oklch, var(--accent-primary) 70%, transparent);
+  border-radius: var(--radius-card);
+}
+
+.drop-overlay-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  border-radius: var(--radius-control); /* stays under the overlay's 12px */
+  background: var(--bg-lighter);
+  background-image: var(--brushed);
+  border: 1px solid color-mix(in oklch, var(--accent-primary) 45%, transparent);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-l);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.staged-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  border-radius: var(--radius-control); /* stays under the panel's 12px */
+  background: color-mix(in oklch, var(--accent-primary) 12%, var(--bg));
+  border: 1px solid color-mix(in oklch, var(--accent-primary) 40%, transparent);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-s);
+  font-size: 0.9rem;
+}
+
+.staged-strip-text {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Gradient phosphor mark on the upload area — same treatment as .ftc-mark. */
 .upload-mark {
   padding: 10px;

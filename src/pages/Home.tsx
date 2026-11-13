@@ -98,6 +98,10 @@ export default function Home() {
   const [dragTargetPeerKey, setDragTargetPeerKey] = useState<string | null>(
     null,
   );
+  // Whole-window drag feedback + held drops: a drop that hits no peer card
+  // goes to the selected device, or waits here until the user taps one.
+  const [dragOverWindow, setDragOverWindow] = useState(false);
+  const [stagedDrops, setStagedDrops] = useState<string[]>([]);
   const {
     shares: pendingShares,
     currentShare: pendingShare,
@@ -367,6 +371,7 @@ export default function Home() {
       async (event) => {
         if (event.payload.type === "leave") {
           setDragTargetPeerKey(null);
+          setDragOverWindow(false);
           return;
         }
 
@@ -381,52 +386,38 @@ export default function Home() {
 
         if (event.payload.type === "enter" || event.payload.type === "over") {
           setDragTargetPeerKey(targetKey);
+          setDragOverWindow(true);
           return;
         }
 
+        // Drop: every pixel of the window is a valid target. A peer card
+        // targets that card; anything else targets the selected device —
+        // including while the Text tab is open — or is held for later when
+        // no device is selected.
         setDragTargetPeerKey(null);
-        if (sendingRef.current) {
-          notifications.show({
-            title: "Transfer in progress",
-            message: "Wait for the current batch to finish before dropping more files.",
-            color: "yellow",
-          });
-          return;
-        }
+        setDragOverWindow(false);
+        const paths = event.payload.paths;
+        if (paths.length === 0) return;
 
         const targetPeer = targetKey
           ? peersRef.current.find(
               (peer) => `${peer.ip}:${peer.port}` === targetKey,
             )
-          : element?.closest("[data-selected-peer-drop-zone]")
-            ? selectedPeerRef.current
-            : null;
+          : selectedPeerRef.current;
 
         if (!targetPeer) {
+          // Never lose a drop: hold the files until a device is tapped.
+          setStagedDrops((prev) => [...prev, ...paths]);
           notifications.show({
-            title: "Drop files on a device",
-            message: "Choose a peer card or the selected peer's file panel.",
-            color: "yellow",
+            title: "Files ready",
+            message: "Dropped files are waiting — tap a device to send them.",
+            color: "phosphor",
           });
           return;
         }
 
         setSelectedPeer(targetPeer);
-        sendingRef.current = true;
-        setSending(true);
-        try {
-          await sendFilePathsToPeer(targetPeer, event.payload.paths);
-        } catch (error) {
-          console.error("Failed to send dropped files:", error);
-          notifications.show({
-            title: "Unable to send files",
-            message: String(error),
-            color: "red",
-          });
-        } finally {
-          sendingRef.current = false;
-          setSending(false);
-        }
+        await sendFilesToPeer(targetPeer, event.payload.paths);
       },
     );
 
@@ -445,6 +436,40 @@ export default function Home() {
       unlistenFileDrop.then((f) => f());
       unlistenProgress.then((f) => f());
     };
+  }, []);
+
+  /**
+   * The one outgoing-files path: guards concurrent sends and surfaces
+   * failures. Used by the file picker, window drops, and staged sends so
+   * they can never drift apart.
+   */
+  const sendFilesToPeer = useCallback(async (peer: Peer, paths: string[]) => {
+    if (sendingRef.current) {
+      notifications.show({
+        title: "Transfer in progress",
+        message:
+          "Wait for the current batch to finish before sending more files.",
+        color: "yellow",
+      });
+      return false;
+    }
+    sendingRef.current = true;
+    setSending(true);
+    try {
+      await sendFilePathsToPeer(peer, paths);
+      return true;
+    } catch (error) {
+      console.error("Failed to send files:", error);
+      notifications.show({
+        title: "Unable to send files",
+        message: String(error),
+        color: "red",
+      });
+      return false;
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
   }, []);
 
   const handleSelectFiles = async () => {
@@ -535,19 +560,26 @@ export default function Home() {
         filePaths = Array.isArray(selected) ? selected : [selected];
       }
 
-      if (sendingRef.current) return;
-      sendingRef.current = true;
-      setSending(true);
-      await sendFilePathsToPeer(selectedPeer, filePaths);
+      await sendFilesToPeer(selectedPeer, filePaths);
     } catch (e) {
       notifications.show({
         title: "Error",
         message: `Failed to open file dialog: ${e}`,
         color: "red",
       });
-    } finally {
-      sendingRef.current = false;
-      setSending(false);
+    }
+  };
+
+  /** Selecting a device flushes any files staged from a no-target drop. */
+  const handlePeerClick = async (peer: Peer) => {
+    setSelectedPeer(peer);
+    if (stagedDrops.length === 0) return;
+    const files = stagedDrops;
+    setStagedDrops([]);
+    const sent = await sendFilesToPeer(peer, files);
+    if (!sent) {
+      // Put them back — a failed send must not eat the user's files.
+      setStagedDrops((prev) => [...files, ...prev]);
     }
   };
 
@@ -789,6 +821,25 @@ export default function Home() {
                 </Tooltip>
               </Group>
 
+              {stagedDrops.length > 0 && (
+                <div className="staged-strip" role="status">
+                  <IconFile size={18} aria-hidden="true" />
+                  <span className="staged-strip-text">
+                    <span className="t-mono">{stagedDrops.length}</span>{" "}
+                    {stagedDrops.length === 1 ? "file" : "files"} ready — tap a
+                    device to send
+                  </span>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    aria-label="Discard staged files"
+                    onClick={() => setStagedDrops([])}
+                  >
+                    <IconX size={16} />
+                  </ActionIcon>
+                </div>
+              )}
+
               {peers.length === 0 ? (
                 <div className="empty-listen">
                   <div className="signal">
@@ -818,11 +869,11 @@ export default function Home() {
                         className={`peer-card ${
                           selectedPeer?.ip === peer.ip ? "selected" : ""
                         } ${dragTargetPeerKey === key ? "peer-drop-target" : ""}`}
-                        onClick={() => setSelectedPeer(peer)}
+                        onClick={() => handlePeerClick(peer)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            setSelectedPeer(peer);
+                            handlePeerClick(peer);
                           }
                         }}
                       >
@@ -912,7 +963,6 @@ export default function Home() {
                     style={{ overflow: "hidden" }}
                   >
                     <div
-                      data-selected-peer-drop-zone
                       className="upload-area flex flex-col items-center justify-center gap-4 py-[clamp(1rem,3vw,2rem)] px-[clamp(0.5rem,2vw,1rem)] cursor-pointer h-full"
                       onClick={handleSelectFiles}
                     >
@@ -1056,6 +1106,23 @@ export default function Home() {
           </Grid.Col>
         </Grid>
       </Container>
+      )}
+
+      {dragOverWindow && (
+        <div className="drop-overlay" aria-hidden="true">
+          <div className="drop-overlay-card">
+            <IconUpload size={28} stroke={2} />
+            <span>
+              {selectedPeer ? (
+                <>
+                  Drop to send to <b>{selectedPeer.alias}</b>
+                </>
+              ) : (
+                "Drop files, then tap a device to send"
+              )}
+            </span>
+          </div>
+        </div>
       )}
 
       {currentMessage && (
