@@ -12,7 +12,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { notifications } from "../lib/notifications";
 import { detectAndroid } from "../lib/platform";
 import { invoke } from "@tauri-apps/api/core";
-import { IconDice, IconFolderOpen, IconShieldCheck } from "@tabler/icons-react";
+import {
+  IconDice,
+  IconFolderOpen,
+  IconShieldCheck,
+  IconX,
+} from "@tabler/icons-react";
 
 interface AppConfig {
   alias: string;
@@ -207,47 +212,51 @@ export default function Settings() {
 
           <div className="settings-divider" />
 
-          {/* Storage — desktop only; Android saves through MediaStore */}
+          {/* Storage — desktop only; Android saves through MediaStore.
+              Stacked block instead of a two-column row: a path is wide data
+              the definition row can't hold at 375px. */}
           {!androidEnabled && (
             <>
+              <div className="settings-divider" />
               <div className="settings-group-label">Storage</div>
-              <div className="settings-row">
-                <div className="settings-row-label">
-                  <div className="settings-field-name">
-                    Save received files to
-                  </div>
-                  <div className="settings-field-desc">
-                    {config.download_dir ? (
-                      <span className="t-mono">{config.download_dir}</span>
-                    ) : (
-                      "Default — your Downloads folder"
-                    )}
-                    {" · Applies immediately, no restart"}
-                  </div>
+              <div className="settings-storage">
+                <div className="settings-field-name">
+                  Save received files to
                 </div>
-                <div className="settings-row-control">
-                  <Button
-                    variant="light"
-                    size="md"
-                    onClick={handleBrowseFolder}
-                    leftSection={<IconFolderOpen size={18} />}
-                    className="depth-button-secondary settings-action"
-                  >
-                    Browse
-                  </Button>
+                <div className="settings-field-desc">
+                  Applies immediately — no restart needed.
+                </div>
+                <div
+                  className={`storage-path${
+                    config.download_dir ? " custom" : ""
+                  }`}
+                  title={config.download_dir ?? undefined}
+                >
+                  <span className="storage-path-text t-mono">
+                    {config.download_dir ?? "Downloads folder (default)"}
+                  </span>
                   {config.download_dir && (
-                    <Button
-                      variant="subtle"
-                      color="gray"
-                      size="md"
+                    <button
+                      type="button"
+                      className="storage-path-clear"
+                      aria-label="Reset to Downloads folder"
                       onClick={() =>
                         setConfig((prev) => ({ ...prev, download_dir: null }))
                       }
                     >
-                      Reset
-                    </Button>
+                      <IconX size={14} stroke={2} />
+                    </button>
                   )}
                 </div>
+                <Button
+                  variant="light"
+                  size="md"
+                  onClick={handleBrowseFolder}
+                  leftSection={<IconFolderOpen size={18} />}
+                  className="depth-button-secondary"
+                >
+                  Choose folder…
+                </Button>
               </div>
             </>
           )}

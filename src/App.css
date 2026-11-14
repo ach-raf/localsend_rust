@@ -1006,6 +1006,70 @@ body {
   padding-right: 1.5rem;
 }
 
+/* Storage field — stacked block (paths are wide data; the two-column
+   definition row clips them). The value sits in a one-line chip that
+   ellipsizes from the START, keeping the folder name visible. */
+.settings-storage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+.storage-path {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.4rem 0.4rem 0.4rem 0.65rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-dark);
+  box-shadow: var(--shadow-inset);
+}
+.storage-path.custom {
+  border-color: color-mix(
+    in oklch,
+    var(--accent-primary) 45%,
+    var(--border-subtle)
+  );
+}
+.storage-path-text {
+  min-width: 0;
+  font-size: 0.78rem; /* ≥ 12px floor */
+  line-height: 1.4;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* rtl line + LTR run = ellipsis lands on the LEFT, so the tail of the
+     path (the folder that matters) survives truncation. */
+  direction: rtl;
+  text-align: left;
+}
+.storage-path-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px; /* stays under the chip's 8px */
+  background: var(--bg-light);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.storage-path-clear:hover {
+  color: var(--text-primary);
+  background: var(--bg-lighter);
+}
+.storage-path-clear:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
 /* ---- Responsive: single column under the desktop breakpoint ---- */
 @media (max-width: 640px) {
   .settings-row {
