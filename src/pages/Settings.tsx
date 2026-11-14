@@ -1,18 +1,22 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Container,
-  Title,
   TextInput,
   NumberInput,
   Button,
   Switch,
-  Text,
+  ActionIcon,
+  Tooltip,
 } from "@mantine/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { notifications } from "../lib/notifications";
 import { detectAndroid } from "../lib/platform";
 import { invoke } from "@tauri-apps/api/core";
-import { IconDice, IconFolderOpen, IconShieldCheck } from "@tabler/icons-react";
+import {
+  IconDice,
+  IconShieldCheck,
+  IconX,
+} from "@tabler/icons-react";
 
 interface AppConfig {
   alias: string;
@@ -52,7 +56,7 @@ export default function Settings() {
   const handleRandomize = async () => {
     try {
       const newName = await invoke<string>("generate_random_name");
-      setConfig({ ...config, alias: newName });
+      setConfig((prev) => ({ ...prev, alias: newName }));
       notifications.show({
         title: "Name Generated",
         message: `New name: ${newName}`,
@@ -120,67 +124,78 @@ export default function Settings() {
       className="animate-[fadeIn_250ms_ease-out]"
     >
       <div className="settings-panel depth-panel max-w-[640px] mx-auto">
-        {/* Header — tight: title + one purpose line, hairline under */}
-        <header className="settings-header">
-          <Title
-            order={2}
-            className="t-display text-text-primary text-[1.625rem] md:text-[1.875rem]"
-          >
-            Settings
-          </Title>
-          <Text className="settings-purpose">
-            How this device appears and listens on the network
-          </Text>
-        </header>
+        <div className="settings-top">
+          <h1 className="settings-title">Settings</h1>
+        </div>
 
-        {/* Body — definition list of fields, hairline-separated */}
-        <div className="settings-body">
-          {/* Device */}
-          <div className="settings-group-label">Device</div>
+        {/* Ledger — four flat hairline rows; labels stay small, the
+           values own the full row width so nothing truncates at 375px */}
+        <div className="settings-ledger">
           <div className="settings-row">
-            <div className="settings-row-label">
-              <div className="settings-field-name">Alias</div>
-              <div className="settings-field-desc">
-                Name visible to nearby devices
-              </div>
+            <div className="settings-row-main">
+              <div className="settings-row-label">Device name</div>
+              <div className="settings-hint">What nearby devices see</div>
             </div>
-            <div className="settings-row-control">
+            <div className="settings-value-zone">
               <TextInput
+                variant="unstyled"
                 value={config.alias}
                 onChange={(event) =>
                   setConfig({ ...config, alias: event.currentTarget.value })
                 }
-                size="md"
-                placeholder="Your device name"
                 maxLength={40}
                 error={aliasError}
+                classNames={{
+                  root: "settings-name-field",
+                  input: "settings-name-input",
+                }}
+                aria-label="Device name"
               />
-              <Button
-                variant="light"
-                size="md"
-                onClick={handleRandomize}
-                leftSection={<IconDice size={18} />}
-                className="depth-button-secondary settings-action"
-              >
-                Generate
-              </Button>
+              <Tooltip label="Generate random name">
+                <ActionIcon
+                  variant="light"
+                  color="phosphor"
+                  onClick={handleRandomize}
+                  size="sm"
+                  aria-label="Generate random name"
+                >
+                  <IconDice size={16} stroke={2} />
+                </ActionIcon>
+              </Tooltip>
             </div>
           </div>
 
-          <div className="settings-divider" />
-
-          {/* Privacy */}
-          <div className="settings-group-label">Privacy</div>
           <div className="settings-row">
-            <div className="settings-row-label">
-              <div className="settings-field-name">Receive from others</div>
-              <div className="settings-field-desc">
+            <div className="settings-row-main">
+              <div className="settings-row-label">Port</div>
+              <div className="settings-hint">Needs an app restart</div>
+            </div>
+            <div className="settings-value-zone">
+              <NumberInput
+                variant="unstyled"
+                value={config.port}
+                onChange={(val) => setConfig({ ...config, port: Number(val) })}
+                allowNegative={false}
+                min={1024}
+                max={65535}
+                clampBehavior="strict"
+                hideControls
+                classNames={{ input: "settings-port-input" }}
+                aria-label="Port"
+              />
+            </div>
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-main">
+              <div className="settings-row-label">Receive from others</div>
+              <div className="settings-hint">
                 {config.receiving_enabled
                   ? "Every file still needs your OK"
-                  : "Paused — you stay visible but nothing can be sent to you"}
+                  : "Paused — you stay visible, nothing gets in"}
               </div>
             </div>
-            <div className="settings-row-control">
+            <div className="settings-value-zone">
               <Switch
                 size="lg"
                 checked={config.receiving_enabled}
@@ -195,99 +210,85 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="security-note" role="note">
-            <IconShieldCheck size={18} aria-hidden="true" />
-            <ul>
-              <li>Nothing is saved until you press Accept.</li>
-              <li>Only devices on your local network can reach this app.</li>
-              <li>Approvals are tied to the sender and expire on their own.</li>
-              <li>Files never open automatically, and risky types are flagged.</li>
-            </ul>
-          </div>
-
-          <div className="settings-divider" />
-
           {/* Storage — desktop only; Android saves through MediaStore */}
           {!androidEnabled && (
-            <>
-              <div className="settings-group-label">Storage</div>
-              <div className="settings-row">
-                <div className="settings-row-label">
-                  <div className="settings-field-name">
-                    Save received files to
-                  </div>
-                  <div className="settings-field-desc">
-                    {config.download_dir ? (
-                      <span className="t-mono">{config.download_dir}</span>
-                    ) : (
-                      "Default — your Downloads folder"
-                    )}
-                    {" · Applies immediately, no restart"}
-                  </div>
+            <div className="settings-row settings-row-storage">
+              <div className="settings-row-line">
+                <div className="settings-row-main">
+                  <div className="settings-row-label">Save files to</div>
+                  <div className="settings-hint">Applies immediately</div>
                 </div>
-                <div className="settings-row-control">
-                  <Button
-                    variant="light"
-                    size="md"
-                    onClick={handleBrowseFolder}
-                    leftSection={<IconFolderOpen size={18} />}
-                    className="depth-button-secondary settings-action"
+                <Button
+                  variant="subtle"
+                  color="phosphor"
+                  size="compact-sm"
+                  onClick={handleBrowseFolder}
+                  className="settings-link-btn"
+                >
+                  Change
+                </Button>
+              </div>
+              <div
+                className="settings-path-line"
+                title={config.download_dir ?? undefined}
+                onClick={handleBrowseFolder}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleBrowseFolder();
+                  }
+                }}
+              >
+                <span
+                  className={`settings-path-text${
+                    config.download_dir ? "" : " default"
+                  }`}
+                  title={config.download_dir ?? "Default — your Downloads folder"}
+                >
+                  {config.download_dir ?? "Downloads — system default"}
+                </span>
+                {config.download_dir && (
+                  <button
+                    type="button"
+                    className="settings-path-clear"
+                    aria-label="Reset to Downloads folder"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfig((prev) => ({
+                        ...prev,
+                        download_dir: null,
+                      }));
+                    }}
                   >
-                    Browse
-                  </Button>
-                  {config.download_dir && (
-                    <Button
-                      variant="subtle"
-                      color="gray"
-                      size="md"
-                      onClick={() =>
-                        setConfig((prev) => ({ ...prev, download_dir: null }))
-                      }
-                    >
-                      Reset
-                    </Button>
-                  )}
-                </div>
+                    <IconX size={14} stroke={2} />
+                  </button>
+                )}
               </div>
-            </>
+            </div>
           )}
-
-          <div className="settings-divider" />
-
-          {/* Network */}
-          <div className="settings-group-label">Network</div>
-          <div className="settings-row">
-            <div className="settings-row-label">
-              <div className="settings-field-name">Port</div>
-              <div className="settings-field-desc settings-field-warning">
-                Requires app restart to take effect
-              </div>
-            </div>
-            <div className="settings-row-control">
-              <NumberInput
-                value={config.port}
-                onChange={(val) => setConfig({ ...config, port: Number(val) })}
-                allowNegative={false}
-                min={1024}
-                max={65535}
-                clampBehavior="strict"
-                size="md"
-              />
-            </div>
-          </div>
         </div>
 
-        {/* Footer — right-aligned primary action, not a full-bleed banner */}
-        <footer className="settings-footer">
+        {/* explicit save + one honest line instead of a bullet wall */}
+        <div className="settings-foot">
           <Button
             loading={loading}
             onClick={handleSave}
             disabled={!!aliasError}
-            className="depth-button-primary settings-save"
+            fullWidth
+            className="depth-button-primary settings-save-bar"
           >
-            Save settings
+            Save
           </Button>
-        </footer>
+          <div className="settings-sec" role="note">
+            <IconShieldCheck size={14} aria-hidden="true" />
+            <span>
+              LAN-only · every transfer needs your OK · nothing opens
+              automatically
+            </span>
+          </div>
+        </div>
       </div>
     </Container>
   );

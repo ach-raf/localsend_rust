@@ -903,131 +903,224 @@ body {
 }
 
 /* ============================================
-   SETTINGS — definition-list panel
-   (system-managed · design.md · dense, not bloated)
-   One brushed raised panel. Fields sit in a label/control
-   definition row; hairline dividers carry the rhythm, not gaps.
+   SETTINGS — ledger
+   (direction V1 of design-mockups/settings-redesign, round 2)
+   One panel in the card surface treatment (.depth-panel); four
+   flat hairline rows, labels small, values own the full row
+   width so nothing truncates at the 375×667 default window.
+   Save is a full-width bar pinned to the bottom; rows spread
+   evenly on taller windows instead of pooling dead space.
    ============================================ */
 
 .settings-panel {
-  /* .depth-panel gives color/brushed/border/shadow; we tune padding here. */
-  padding: clamp(1.25rem, 1rem + 2.5vw, 2rem);
+  /* .depth-panel gives color/brushed/border/shadow. The panel fills the
+     area under the app header so the ledger owns the window — but on
+     very tall windows it stops at 700px instead of stretching lanky. */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 14px 12px;
+  height: min(calc(100dvh - var(--app-shell-header-height, 64px) - 24px), 700px);
 }
 
-.settings-header {
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-subtle);
+.settings-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
-.settings-purpose {
-  margin-top: 0.35rem;
-  font-size: 0.84rem;
-  color: var(--text-secondary);
-}
-
-.settings-body {
-  /* hairline-separated definition rows */
-  padding-top: 0.5rem;
+.settings-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
 }
 
-.settings-group-label {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  margin: 1.25rem 0 0.75rem;
+/* ledger: flat rows with hairline separators, spread evenly so tall
+   windows breathe instead of pooling dead space above the save bar */
+.settings-ledger {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
 }
-.settings-group-label:first-child {
-  margin-top: 0.5rem;
-}
-
 .settings-row {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.25rem;
-}
-
-.settings-row-label {
-  flex: 1 1 0;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
-  padding-top: 0.5rem; /* optical align with the input text */
+  padding: 10px 2px;
 }
-.settings-field-name {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 0.98rem;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
+.settings-row + .settings-row {
+  border-top: 1px solid var(--border-subtle);
 }
-.settings-field-desc {
-  margin-top: 0.2rem;
-  font-size: 0.82rem;
-  line-height: 1.4;
-  color: var(--text-secondary);
-  max-width: 34ch;
-}
-.settings-field-warning {
-  /* semantic warning — the only chromatic allowed besides phosphor */
-  color: var(--accent-warning);
-}
-
-.settings-row-control {
-  /* right column: control (+optional action). Stays narrow on desktop. */
-  flex: 0 1 280px;
-  display: flex;
-  align-items: stretch;
-  gap: 0.5rem;
-}
-.settings-row-control > :first-child {
-  flex: 1 1 0;
-  min-width: 0;
-}
-.settings-action {
+.settings-row-main {
   flex: 0 0 auto;
 }
-
-.settings-divider {
-  height: 1px;
-  margin: 1.25rem 0;
-  background: var(--border-subtle);
+/* a wide one-line hint would starve the value zone — cap it so it
+   wraps (mockup behavior), and keep the block at its wrapped width
+   (fit-content) so the cap itself never becomes dead width */
+.settings-row-main .settings-hint {
+  max-width: 7rem;
+  width: fit-content;
 }
-
-.settings-footer {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border-subtle);
+.settings-row-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+/* storage row is two lines: label+action, then the full-width path */
+.settings-row-storage {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.settings-row-line {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
-.settings-save {
-  min-height: 40px;
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
+.settings-row-line .settings-row-main {
+  flex: 1;
+  /* uncapped: this main must stretch so the Change action sits flush right */
+  max-width: none;
+}
+.settings-link-btn {
+  font-weight: 600;
 }
 
-/* ---- Responsive: single column under the desktop breakpoint ---- */
-@media (max-width: 640px) {
-  .settings-row {
-    flex-direction: column;
-    gap: 0.6rem;
-  }
-  .settings-row-label {
-    padding-top: 0;
-  }
-  .settings-row-control {
-    flex: 1 1 100%;
-    flex-direction: column;
-  }
-  .settings-action {
-    align-self: flex-start;
-  }
-  .settings-footer {
-    justify-content: stretch;
-  }
-  .settings-save {
-    width: 100%;
-  }
+/* value zone: everything right of the label, right-aligned */
+.settings-value-zone {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+/* the value IS the field — borderless, no box, edits in place.
+   The Mantine ROOT wrapper is the flex child of the value zone;
+   without flex:1 on it the input clips long names instead of
+   claiming the full remaining row width. */
+.settings-name-field {
+  flex: 1;
+  min-width: 0;
+}
+.settings-name-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  text-align: right;
+  font-family: var(--font-body);
+  /* 16px, not larger — the value zone is ~150px wide at the 375px default
+     window and a 15-char alias must fit whole; grows safe on wide windows */
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.settings-name-input::placeholder {
+  color: var(--text-tertiary);
+}
+.settings-port-input {
+  width: 5.5rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.settings-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-tertiary);
+}
+
+/* bottom: full-width save bar + one honest line instead of a bullet wall */
+.settings-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-save-bar {
+  min-height: 42px;
+}
+
+/* security strip — one honest line instead of a bullet wall */
+.settings-sec {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.settings-sec svg {
+  flex: none;
+  color: var(--accent-primary);
+}
+
+/* path line — value in one line, ellipsized from the START so the
+   folder name survives truncation; click opens the folder picker,
+   the ✕ resets to Downloads. */
+.settings-path-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.settings-path-line:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+.settings-path-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem; /* ≥ 12px floor */
+  line-height: 1.4;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* rtl line + LTR run = ellipsis lands on the LEFT */
+  direction: rtl;
+  text-align: left;
+}
+.settings-path-text.default {
+  font-family: var(--font-body);
+}
+.settings-path-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px; /* stays under the panel's 12px */
+  background: var(--bg-light);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.settings-path-clear:hover {
+  color: var(--text-primary);
+  background: var(--bg-lighter);
+}
+.settings-path-clear:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 /* ============================================
@@ -1646,34 +1739,6 @@ body {
 @keyframes ftc-drain {
   from { transform: scaleX(1); }
   to { transform: scaleX(0); }
-}
-
-/* ---- Settings: privacy note ---- */
-.security-note {
-  display: flex;
-  gap: 0.75rem;
-  margin: 0.25rem 0 0.5rem;
-  padding: 0.8rem 1rem;
-  border-radius: var(--radius-control);
-  background-color: var(--bg-dark);
-  background-image: var(--brushed-soft);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-inset);
-  color: var(--accent-primary);
-}
-.security-note svg {
-  flex: none;
-  margin-top: 0.15rem;
-}
-.security-note ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 0.3rem;
-  font-size: 0.86rem;
-  line-height: 1.45;
-  color: var(--text-secondary);
 }
 
 @media (prefers-reduced-motion: reduce) {
