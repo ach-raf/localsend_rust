@@ -903,21 +903,23 @@ body {
 }
 
 /* ============================================
-   SETTINGS — control grid
-   (direction A of design-mockups/settings-redesign)
-   One panel, 2×2 field cards, save in the header.
-   Built to fit the app's default 375×667 window with
-   no scrolling; cards stretch and widen on larger ones.
+   SETTINGS — ledger
+   (direction V1 of design-mockups/settings-redesign, round 2)
+   One panel in the card surface treatment (.depth-panel); four
+   flat hairline rows, labels small, values own the full row
+   width so nothing truncates at the 375×667 default window.
+   Save is a full-width bar pinned to the bottom; rows spread
+   evenly on taller windows instead of pooling dead space.
    ============================================ */
 
 .settings-panel {
   /* .depth-panel gives color/brushed/border/shadow. The panel fills the
-     area under the app header so the card grid owns the window — but on
+     area under the app header so the ledger owns the window — but on
      very tall windows it stops at 700px instead of stretching lanky. */
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 14px 12px 12px;
+  padding: 14px 14px 12px;
   height: min(calc(100dvh - var(--app-shell-header-height, 64px) - 24px), 700px);
 }
 
@@ -933,54 +935,105 @@ body {
   letter-spacing: -0.01em;
   color: var(--text-primary);
 }
-.settings-save {
-  border-radius: var(--radius-pill);
-  min-height: 36px;
-  padding-left: 18px;
-  padding-right: 18px;
-}
 
-/* 2×2 cards. minmax(0,1fr) so an input's intrinsic width can never push
-   the grid past the 375px window. */
-.settings-grid {
+/* ledger: flat rows with hairline separators, spread evenly so tall
+   windows breathe instead of pooling dead space above the save bar */
+.settings-ledger {
   flex: 1;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
-  gap: 10px;
-}
-.settings-card {
-  background-color: var(--bg);
-  background-image: var(--brushed);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-s);
-  padding: 14px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 9px;
-  min-width: 0;
-  min-height: 118px;
+  justify-content: space-evenly;
 }
-/* with the storage card hidden (Android) the toggle takes the full row */
-.settings-grid.no-storage .settings-card-receive {
-  grid-column: 1 / -1;
-}
-.settings-card-title {
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-}
-
-/* card head: title left, the card's one action (dice / folder) right */
-.settings-card-head {
+.settings-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 2px;
+}
+.settings-row + .settings-row {
+  border-top: 1px solid var(--border-subtle);
+}
+.settings-row-main {
+  flex: 0 0 auto;
+}
+/* a wide one-line hint would starve the value zone — cap it so it
+   wraps (mockup behavior), and keep the block at its wrapped width
+   (fit-content) so the cap itself never becomes dead width */
+.settings-row-main .settings-hint {
+  max-width: 7rem;
+  width: fit-content;
+}
+.settings-row-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+/* storage row is two lines: label+action, then the full-width path */
+.settings-row-storage {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.settings-row-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.settings-row-line .settings-row-main {
+  flex: 1;
+  /* uncapped: this main must stretch so the Change action sits flush right */
+  max-width: none;
+}
+.settings-link-btn {
+  font-weight: 600;
+}
+
+/* value zone: everything right of the label, right-aligned */
+.settings-value-zone {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 6px;
+}
+/* the value IS the field — borderless, no box, edits in place.
+   The Mantine ROOT wrapper is the flex child of the value zone;
+   without flex:1 on it the input clips long names instead of
+   claiming the full remaining row width. */
+.settings-name-field {
+  flex: 1;
+  min-width: 0;
+}
+.settings-name-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  text-align: right;
+  font-family: var(--font-body);
+  /* 16px, not larger — the value zone is ~150px wide at the 375px default
+     window and a 15-char alias must fit whole; grows safe on wide windows */
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.settings-name-input::placeholder {
+  color: var(--text-tertiary);
+}
+.settings-port-input {
+  width: 5.5rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--text-primary);
 }
 
 .settings-hint {
@@ -989,16 +1042,14 @@ body {
   color: var(--text-tertiary);
 }
 
-.settings-switch-line {
+/* bottom: full-width save bar + one honest line instead of a bullet wall */
+.settings-foot {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 10px;
-  flex: 1;
 }
-.settings-switch-line .settings-hint {
-  flex: 1;
-  min-width: 0;
+.settings-save-bar {
+  min-height: 42px;
 }
 
 /* security strip — one honest line instead of a bullet wall */
@@ -1015,33 +1066,25 @@ body {
   color: var(--accent-primary);
 }
 
-/* folder chip inside the storage card — value in one line, ellipsized
-   from the START so the folder name survives truncation; click opens
-   the folder picker, the ✕ resets to Downloads. */
-.storage-path {
+/* path line — value in one line, ellipsized from the START so the
+   folder name survives truncation; click opens the folder picker,
+   the ✕ resets to Downloads. */
+.settings-path-line {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
-  padding: 0.4rem 0.4rem 0.4rem 0.65rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-  background: var(--bg-dark);
-  box-shadow: var(--shadow-inset);
+  padding: 2px;
+  background: none;
+  border: none;
   cursor: pointer;
 }
-.storage-path.custom {
-  border-color: color-mix(
-    in oklch,
-    var(--accent-primary) 45%,
-    var(--border-subtle)
-  );
-}
-.storage-path:focus-visible {
+.settings-path-line:focus-visible {
   outline: 2px solid var(--accent-primary);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
-.storage-path-text {
+.settings-path-text {
+  flex: 1;
   min-width: 0;
   font-size: 0.78rem; /* ≥ 12px floor */
   line-height: 1.4;
@@ -1053,7 +1096,10 @@ body {
   direction: rtl;
   text-align: left;
 }
-.storage-path-clear {
+.settings-path-text.default {
+  font-family: var(--font-body);
+}
+.settings-path-clear {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -1062,17 +1108,17 @@ body {
   height: 22px;
   padding: 0;
   border: none;
-  border-radius: 6px; /* stays under the chip's 8px */
+  border-radius: 6px; /* stays under the panel's 12px */
   background: var(--bg-light);
   color: var(--text-secondary);
   cursor: pointer;
   transition: var(--transition-fast);
 }
-.storage-path-clear:hover {
+.settings-path-clear:hover {
   color: var(--text-primary);
   background: var(--bg-lighter);
 }
-.storage-path-clear:focus-visible {
+.settings-path-clear:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 1px;
 }
