@@ -903,128 +903,132 @@ body {
 }
 
 /* ============================================
-   SETTINGS — definition-list panel
-   (system-managed · design.md · dense, not bloated)
-   One brushed raised panel. Fields sit in a label/control
-   definition row; hairline dividers carry the rhythm, not gaps.
+   SETTINGS — control grid
+   (direction A of design-mockups/settings-redesign)
+   One panel, 2×2 field cards, save in the header.
+   Built to fit the app's default 375×667 window with
+   no scrolling; cards stretch and widen on larger ones.
    ============================================ */
 
 .settings-panel {
-  /* .depth-panel gives color/brushed/border/shadow; we tune padding here. */
-  padding: clamp(1.25rem, 1rem + 2.5vw, 2rem);
-}
-
-.settings-header {
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.settings-purpose {
-  margin-top: 0.35rem;
-  font-size: 0.84rem;
-  color: var(--text-secondary);
-}
-
-.settings-body {
-  /* hairline-separated definition rows */
-  padding-top: 0.5rem;
-}
-
-.settings-group-label {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  margin: 1.25rem 0 0.75rem;
-}
-.settings-group-label:first-child {
-  margin-top: 0.5rem;
-}
-
-.settings-row {
+  /* .depth-panel gives color/brushed/border/shadow. The panel fills the
+     area under the app header so the card grid owns the window — but on
+     very tall windows it stops at 700px instead of stretching lanky. */
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.25rem;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 12px 12px;
+  height: min(calc(100dvh - var(--app-shell-header-height, 64px) - 24px), 700px);
 }
 
-.settings-row-label {
-  flex: 1 1 0;
-  min-width: 0;
-  padding-top: 0.5rem; /* optical align with the input text */
+.settings-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
-.settings-field-name {
+.settings-title {
   font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+.settings-save {
+  border-radius: var(--radius-pill);
+  min-height: 36px;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+/* 2×2 cards. minmax(0,1fr) so an input's intrinsic width can never push
+   the grid past the 375px window. */
+.settings-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 10px;
+}
+.settings-card {
+  background-color: var(--bg);
+  background-image: var(--brushed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-s);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 9px;
+  min-width: 0;
+  min-height: 118px;
+}
+/* with the storage card hidden (Android) the toggle takes the full row */
+.settings-grid.no-storage .settings-card-receive {
+  grid-column: 1 / -1;
+}
+.settings-card-title {
+  font-family: var(--font-display);
+  font-size: 13px;
   font-weight: 600;
-  font-size: 0.98rem;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
-.settings-field-desc {
-  margin-top: 0.2rem;
-  font-size: 0.82rem;
-  line-height: 1.4;
-  color: var(--text-secondary);
-  max-width: 34ch;
-}
-.settings-field-warning {
-  /* semantic warning — the only chromatic allowed besides phosphor */
-  color: var(--accent-warning);
+
+/* card head: title left, the card's one action (dice / folder) right */
+.settings-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
 }
 
-.settings-row-control {
-  /* right column: control (+optional action). Stays narrow on desktop. */
-  flex: 0 1 280px;
-  display: flex;
-  align-items: stretch;
-  gap: 0.5rem;
+.settings-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-tertiary);
 }
-.settings-row-control > :first-child {
-  flex: 1 1 0;
+
+.settings-switch-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1;
+}
+.settings-switch-line .settings-hint {
+  flex: 1;
   min-width: 0;
 }
-.settings-action {
-  flex: 0 0 auto;
-}
 
-.settings-divider {
-  height: 1px;
-  margin: 1.25rem 0;
-  background: var(--border-subtle);
-}
-
-.settings-footer {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border-subtle);
+/* security strip — one honest line instead of a bullet wall */
+.settings-sec {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
 }
-.settings-save {
-  min-height: 40px;
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
+.settings-sec svg {
+  flex: none;
+  color: var(--accent-primary);
 }
 
-/* Storage field — stacked block (paths are wide data; the two-column
-   definition row clips them). The value sits in a one-line chip that
-   ellipsizes from the START, keeping the folder name visible. */
-.settings-storage {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.6rem;
-}
+/* folder chip inside the storage card — value in one line, ellipsized
+   from the START so the folder name survives truncation; click opens
+   the folder picker, the ✕ resets to Downloads. */
 .storage-path {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  max-width: 100%;
+  min-width: 0;
   padding: 0.4rem 0.4rem 0.4rem 0.65rem;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
   background: var(--bg-dark);
   box-shadow: var(--shadow-inset);
+  cursor: pointer;
 }
 .storage-path.custom {
   border-color: color-mix(
@@ -1032,6 +1036,10 @@ body {
     var(--accent-primary) 45%,
     var(--border-subtle)
   );
+}
+.storage-path:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 .storage-path-text {
   min-width: 0;
@@ -1041,8 +1049,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* rtl line + LTR run = ellipsis lands on the LEFT, so the tail of the
-     path (the folder that matters) survives truncation. */
+  /* rtl line + LTR run = ellipsis lands on the LEFT */
   direction: rtl;
   text-align: left;
 }
@@ -1068,30 +1075,6 @@ body {
 .storage-path-clear:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 1px;
-}
-
-/* ---- Responsive: single column under the desktop breakpoint ---- */
-@media (max-width: 640px) {
-  .settings-row {
-    flex-direction: column;
-    gap: 0.6rem;
-  }
-  .settings-row-label {
-    padding-top: 0;
-  }
-  .settings-row-control {
-    flex: 1 1 100%;
-    flex-direction: column;
-  }
-  .settings-action {
-    align-self: flex-start;
-  }
-  .settings-footer {
-    justify-content: stretch;
-  }
-  .settings-save {
-    width: 100%;
-  }
 }
 
 /* ============================================
@@ -1710,34 +1693,6 @@ body {
 @keyframes ftc-drain {
   from { transform: scaleX(1); }
   to { transform: scaleX(0); }
-}
-
-/* ---- Settings: privacy note ---- */
-.security-note {
-  display: flex;
-  gap: 0.75rem;
-  margin: 0.25rem 0 0.5rem;
-  padding: 0.8rem 1rem;
-  border-radius: var(--radius-control);
-  background-color: var(--bg-dark);
-  background-image: var(--brushed-soft);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-inset);
-  color: var(--accent-primary);
-}
-.security-note svg {
-  flex: none;
-  margin-top: 0.15rem;
-}
-.security-note ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 0.3rem;
-  font-size: 0.86rem;
-  line-height: 1.45;
-  color: var(--text-secondary);
 }
 
 @media (prefers-reduced-motion: reduce) {
